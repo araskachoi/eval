@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local Eval · Recordings</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><span class="badge">LOCAL · METRICS ONLY</span><h1>Your agent work, explained.</h1><p>See the time, tokens, and cost of a recording. Explore agent activity when you need more detail.</p></header>
+<section id="login"><h2>Open your local recordings</h2><p>Run <code>python3 -m codex_eval panel</code> and enter its one-time code. Codes expire after 60 seconds.</p><form id="login-form"><label>One-time code<input id="code" type="password" required autocomplete="off"></label><button>Connect</button></form></section>
+<section id="workspace" hidden>
+<div class="notice"><strong>Live Codex capture is not connected.</strong> The examples below contain scripted sample data. They do not describe your conversations or real charges.</div>
+<p id="state" role="status"></p>
+<article id="analysis" hidden aria-labelledby="report-title">
+<p id="source" class="badge"></p><h2 id="report-title">Recording summary</h2><p id="description"></p><p id="identity" class="muted"></p>
+<div id="metrics" class="metrics"></div>
+<details><summary>What do these numbers mean?</summary><p>Total tokens = input + output. Cached input shows reused input tokens already included in that total. Cached output is not reported by our current adapter; it is not inferred from cache writes or reasoning tokens. Elapsed time is the recording window, not model response time.</p><p>Lines shows added (+) and removed (−) lines in the latest reported net change from the recording's starting point. Repeated edits and subagent changes are not added together. Older recordings without line data show Unavailable.</p><p>All sample counters, including line changes and costs, are scripted examples. The label sim-weather-v1 identifies our simulation and synthetic price table, not an AI model. No AI model runs in these samples.</p></details>
+<h3>Who did the work?</h3><p>Agent activity belongs inside a recording. It does not create extra recordings in the list.</p>
+<p id="single-agent" class="muted"></p>
+<div id="agent-controls" class="controls" hidden>
+<label id="view-label">Show<select id="view"><option value="tree">Agent hierarchy</option><option value="ranked">Compare agents</option></select></label>
+<label id="sort-label">Compare by<select id="sort"><option value="own_tokens">Tokens used</option><option value="tool_ms">Time in tools</option><option value="failures">Failed tool calls</option></select></label>
+</div><p id="comparison" class="muted"></p><div id="tree"></div>
+<h3>Models used</h3><div id="models"></div>
+<h3>What happened?</h3><div id="findings"></div><ul id="warnings"></ul><div id="security"></div>
+<h3>What was checked?</h3><p id="outcome"></p><div id="checks"></div>
+<div id="related"></div>
+<details><summary>Technical details · identifiers and raw metrics</summary><p>Recording ID identifies this measurement window. Task ID connects related recordings. Agent IDs identify activity inside the recording.</p><pre id="diagnostics"></pre></details>
+</article>
+<h2>Your recordings</h2><p>A recording is the time between starting and stopping measurement. It can contain several prompts and subagents. A task can span several recordings.</p><div id="history"></div>
+<details id="samples" open><summary>Sample walkthroughs</summary><p>These are six scripted test cases. Running the verification suite again creates another copy; it does not mean you prompted the agent again.</p><div id="sample-history"></div><details><summary id="archive-label">Earlier sample copies</summary><div id="sample-archive"></div></details></details>
+<details><summary>Recording setup</summary><p>Browser recording controls are unavailable until live capture is verified. Commands invoked from Codex can identify their current chat; this browser page cannot.</p><p>The local collector currently accepts explicitly correlated metrics. Starting it does not automatically measure Codex.</p></details>
+</section><p id="error" role="alert"></p></main></body></html>

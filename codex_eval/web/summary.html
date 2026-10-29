@@ -1,0 +1,26 @@
+<section id="$root_id" aria-label="Recorded session summary">
+  <h3>$title</h3>
+  <p>$description</p>
+  <p><strong>$source</strong></p>
+  <div class="viz-row">
+    <span>Total tokens <strong>$tokens</strong></span>
+    <span>Elapsed <strong>$elapsed</strong></span>
+    <span>$cost_label <strong>$cost</strong></span>
+    <span>Cached input <strong>$cache</strong></span>
+    <span>Cached output <strong>$cached_output</strong></span>
+    <span>Lines <strong>$lines</strong></span>
+  </div>
+  <p class="text-small">$coverage · $outcome</p>
+  <details>
+    <summary>Show breakdown</summary>
+    <table class="table table-sm">
+      <caption>Recorded own usage by agent</caption>
+      <thead><tr><th scope="col">Agent</th><th scope="col">Tokens</th><th scope="col">Status</th></tr></thead>
+      <tbody>$rows</tbody>
+    </table>
+    <p>Input $input · Output $output. Cache is included in input.</p>
+    <p>Model: $model. Cached output is not reported by the current adapter. Lines show the latest reported net change for this recording, not a sum of every edit.</p>
+    <table class="table table-sm"><caption>Models and usage as reported</caption><thead><tr><th>Harness</th><th>Provider</th><th>Model ID</th><th>Tokens</th></tr></thead><tbody>$model_rows</tbody></table>
+    <p class="text-small">USD is an estimate or simulation, never a billed amount. Missing values are unavailable, not zero. This snapshot does not update live.</p>
+  </details>
+</section>

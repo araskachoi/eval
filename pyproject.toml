@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-eval-local"
+version = "0.1.0"
+description = "Local, metrics-only agent evaluation and Finish reports"
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+codex-eval = "codex_eval.__main__:main"
+
+[tool.setuptools.package-data]
+codex_eval = ["web/*.html", "web/*.js", "web/*.css"]
+
+[tool.setuptools.packages.find]
+include = ["codex_eval*"]

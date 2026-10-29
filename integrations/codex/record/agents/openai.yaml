@@ -1,0 +1,4 @@
+interface:
+  display_name: "Record"
+  short_description: "Control recording for the current Codex chat"
+  default_prompt: "Use $record for the requested current-chat recording action."
