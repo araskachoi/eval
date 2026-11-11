@@ -23,6 +23,11 @@ The installer prints its destination and matching collector command; see the
 [guide](docs/quickstart.md) for custom paths, updates, exports, and removal.
 No model credentials are needed. No live usage appears without an event adapter.
 
+For manual updates, saved app versions, and rollback, use the
+[publish workflow](docs/releases.md). After its first setup, publish a finished
+change with `python3 scripts/publish_app.py publish`; it runs isolated checks,
+switches the collector, and refreshes the global Record skill together.
+
 ## Current limitations
 
 This is an experimental, local collector and reporting foundation. It is not
@@ -37,8 +42,8 @@ ready to serve as an automatic live usage meter for public users.
 | Skill overhead | Skill controls invoke the agent and may consume tokens. Reliable control-turn exclusion and removal of later context effects are unimplemented. |
 | Platforms | Desktop integration has been reviewed locally on macOS. Python 3.14+ and POSIX shell/socket/permission support are required. Linux desktop integration is unverified; native Windows installation is unsupported. |
 | Harness portability | A custom skills directory changes discovery only. Another harness still needs a verified identity and metrics adapter; cross-harness capture is not implemented. |
-| Installation | Source-checkout workflow; installer/integration assets are not included in the Python wheel. Skills bind to absolute checkout, interpreter, and state paths and must be reinstalled if those move. No installer-managed daemon or automatic update exists. |
-| Availability | Foreground collector required. Restart/crash interrupts open windows; they do not resume automatically. Inline cards are snapshots, and renderer support varies. |
+| Installation | Source-checkout workflow; installer/integration assets are not included in the Python wheel. Manual publishing saves releases and refreshes the global skill. Paths must remain stable. No save watcher or launch-at-login service is installed. |
+| Availability | Collector must be running, either in a foreground terminal or started by the publisher. Managed updates refuse active windows; other restarts/crashes interrupt them. Inline cards are snapshots, and renderer support varies. |
 | Evaluation | Weather cases, agent trees, and security checks are synthetic. They do not establish real-agent quality, live capture, MAGEN effectiveness, or a measured overhead budget. Paid/live model execution remains disabled. |
 | Development tests | Tests require the dedicated VM and verified rootless containers. The launcher depends on separately provisioned local Podman/VM assets, so a fresh clone is not a turnkey test environment. |
 
@@ -189,7 +194,12 @@ Changing the view does not change the recording or token accounting.
 events, with provider, harness, and token totals. Per-call accounting supports
 adaptive agents switching models within one execution, including mixed-provider
 events. Model snapshots are preserved as reported, never guessed. Unknown models
-stay unattributed; new IDs require review in the small model catalog. Synthetic
+stay unattributed; new IDs require review in the small model catalog or a
+source-reviewed runtime adapter definition. Explicit Ollama receipt ingestion and
+a synthetic numeric adapter share the same call accounting contract. Neither
+automatically captures runtime activity. Non-weather supplied-reference checks
+use a registered grader with bounded scope; manual RAG quality reviews remain
+external. See the [extension contracts](docs/interfaces.md#reviewed-runtime-extensions). Synthetic
 pricing is separate from model identity. Older sample reports are reinterpreted
 without changing stored history. Live Codex model capture and a Claude Code
 adapter remain unimplemented; the tests are synthetic and make no model calls.

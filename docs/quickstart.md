@@ -1,5 +1,9 @@
 # Quick start
 
+For a versioned installation with manual updates and rollback, follow
+[Publish and return to an earlier version](releases.md). The instructions below
+also support a foreground development collector without managed releases.
+
 Local Eval is an experimental local metrics collector and report viewer. This
 guide installs its agent-mediated `/record` skill and starts the local collector.
 **Live Codex capture is unavailable.** Without a separately implemented, trusted
@@ -65,8 +69,9 @@ python3 scripts/install_record_skill.py --state "$HOME/.local/share/local-eval"
 ```
 
 Use one installation command with both options if needed. The installer refuses
-to overwrite any existing `record` folder or symlink. For updates, inspect and
-move that folder aside, then rerun the installer. Avoid duplicate Record skills
+to overwrite any existing `record` folder or symlink. For updates with release
+history, use the [publisher](releases.md). For an unmanaged installation, inspect
+and move that folder aside, then rerun the installer. Avoid duplicate Record skills
 in different discovery roots. Do not copy the source template directly: its
 command placeholders must be rendered by the installer.
 

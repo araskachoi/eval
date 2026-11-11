@@ -1,4 +1,65 @@
-# Local verification — 2026-10-28
+# Local verification
+
+## Runtime adapters and assessment definitions — 2026-11-09
+
+- Implemented source-reviewed Ollama receipt and synthetic numeric adapters, exact
+  model/harness allowlists, registered check/grader pairs, and counter-availability
+  flags across call groups, executions, recordings and linked attempts.
+- All **79 tests passed** in 6.207 seconds using
+  `python3 scripts/isolated.py test --magen /absolute/path/to/magen --no-export`.
+  Effective gate: dedicated `eval-sandbox`, rootless, UID 1000, network none,
+  zero host mounts. Test bundle SHA-256:
+  `049f068e87248bc1002e9d58b77e1b6b94af4cff347893cf8b0d3ac0c9e65665`.
+  Image ID: `fe83005fb105be014095e304ce578212522449ec2ad47649ef4833ef9a84abda`.
+  No test/security payload ran on the host and no sample reports were exported.
+- Receipt checks cover cumulative snapshot replacement, retries as separate calls,
+  duplicates, multiple runtimes within one execution, unknown identity suppression,
+  missing versus zero cached/reasoning values, partial completion, and late delivery.
+  Private-socket ingestion is exercised without reading an ingestion credential.
+  Assessment checks retain separate executions and prevent a passing execution
+  from hiding another execution's failure; unknown definitions/provenance fail.
+- Replayed the saved bounded RAG pilot receipts through
+  fresh experiment-only collector state. No new inference, retrieval, or vault
+  access occurred. All three recordings matched independent receipts and prior
+  numeric totals: initial baseline 2,284 input / 70 output; RAG 3,354 / 107;
+  corrected baseline 3,339 / 127. Exact reported `gemma4:latest`, provider `ollama`,
+  harness `local-agent-pilot`, response evidence, and adapter `ollama-response-v1`
+  now survive normalization. Cached/reasoning remain null, with false availability.
+- The local replay comparison records original-file and eval-source hashes,
+  full replay reports, and
+  successful before/after checks of original receipts and the exhausted budget
+  ledger. Older outputs were not rewritten. The pilot emitter now tags its
+  reviewed adapter and saves counter availability for future authorized runs.
+- No detector changes, deployment, fresh generation, semantic regrading, live
+  interception, or billing verification. Browser rendering of these new labels
+  was not visually checked. An exact reported `latest` alias is not proof of an
+  immutable model version. Totals with false availability flags are observations,
+  not complete measurements.
+
+## Managed releases — 2026-11-04
+
+- Published and activated `0.2.0-f21c85ea5558` through the manual publisher.
+  Full app source SHA-256:
+  `f21c85ea5558edbbf8c92a54fdf55d7e74efbe6ea09efeb1c4b91749f5c7fa4f`.
+- The publication gate passed all 71 tests in the dedicated rootless Linux VM,
+  with no workload network or host mounts. Its validation-input digest is
+  `14b36aa8b0b3dfe42769af2ca7355e90aa8d4779c4fb5bb5bcd139f34f85fa48`.
+  No samples were exported to host state and no live model calls were made.
+- New release tests cover source integrity and symlink rejection, active-window
+  update refusal, database schema compatibility, recording-version provenance,
+  release switching, rollback, and recovery after a candidate fails startup.
+  The activation integration test uses temporary state and temporary skill files
+  inside the container, not the user's global skill or production database.
+- The published collector's private control interface reported the matching
+  version/build after the publisher exited, 63 retained recordings, no active
+  window, and no pending update. The global Record commands reference that exact
+  release directory and the existing acceptance-metrics state.
+- `versions` verified the saved release and marked it active. `git diff --check`
+  passed. The source is uncommitted and the manifest explicitly records dirty
+  source beside the full source hash and baseline Git revision.
+- Visual checking of the updated header was blocked by browser security policy;
+  no workaround was attempted. Earlier visual checks below describe earlier UI.
+  First managed publication establishes history; there is no saved 0.1.0 release.
 
 ## Pre-publication recheck — 2026-10-28
 

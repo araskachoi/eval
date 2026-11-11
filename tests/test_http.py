@@ -85,3 +85,23 @@ class HttpTests(unittest.TestCase):
         finished=control(self.state,dict(request,operation='stop'))
         self.assertEqual(finished['report']['recording']['id'],started['recording_id'])
         self.assertEqual(control(self.state,dict(request,operation='report'))['report']['recording']['id'],started['recording_id'])
+
+    def test_explicit_receipt_ingestion_over_private_socket(self):
+        from codex_eval.adapters import receipt_usage
+        thread, execution = new_id(), new_id()
+        record = control(self.state, {'action':'on', 'thread_id':thread})
+        event = receipt_usage('ollama-response-v1', {'model':'llama3.2:3b', 'prompt_eval_count':23, 'eval_count':8},
+                              event_id=new_id(), thread_id=thread, execution_id=execution,
+                              request_id=new_id(), occurred_at=time.time())
+        payload = dict(action='ingest', recording_id=record['id'], event=event)
+        try:
+            self.assertTrue(control(self.state, payload)['accepted'])
+            self.assertFalse(control(self.state, payload)['accepted'])
+            report = control(self.state, {'action':'report', 'recording_id':record['id']})
+            self.assertEqual(report['totals'], dict(input=23, output=8, cached=None, reasoning=None))
+            self.assertEqual(report['models'][0]['model'], 'llama3.2:3b')
+            self.assertEqual(report['models'][0]['adapter'], 'ollama-response-v1')
+            self.assertEqual(report['presentation']['metrics']['cache'], 'Unavailable')
+            self.assertIsNone(report['actual_billed_usd'])
+        finally:
+            control(self.state, {'action':'off', 'thread_id':thread})

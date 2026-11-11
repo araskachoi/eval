@@ -11,7 +11,9 @@ import time
 import uuid
 from decimal import Decimal
 from pathlib import Path
-from .models import COUNTERS, breakdown, identity, sum_counters
+from .models import COUNTERS, breakdown, counter_completeness, identity, sum_counters
+from .checks import assessment
+from .version import application
 
 LIMIT = 128 * 1024
 RETENTION = 30 * 86400
@@ -99,13 +101,7 @@ def normalize(event):
             raise ValueError("Invalid tool status")
         result["duration_ms"] = integer(event["duration_ms"]) if event.get("duration_ms") is not None else None
     elif kind == "check":
-        if event.get("check") not in {"coordinates", "display", "timeout", "units", "rate_limit", "credential_output"}:
-            raise ValueError("Unknown check")
-        if event.get("status") not in {"passed", "failed", "error"}:
-            raise ValueError("Invalid check status")
-        if event.get("grader") != "weather-fixture-v1":
-            raise ValueError("Unrecognized grader")
-        result.update(check=event["check"], status=event["status"], grader=event["grader"])
+        result.update(assessment(event))
     else:
         if event.get("action") not in {"allow", "block"}:
             raise ValueError("Invalid security decision")
@@ -146,6 +142,9 @@ class Store:
           CREATE TABLE IF NOT EXISTS sample_cases(
             recording_id TEXT PRIMARY KEY REFERENCES recordings(id) ON DELETE CASCADE,
             name TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS recording_builds(
+            recording_id TEXT PRIMARY KEY REFERENCES recordings(id) ON DELETE CASCADE,
+            data TEXT NOT NULL);
           PRAGMA user_version=1;
         """)
         self.purge()
@@ -181,6 +180,7 @@ class Store:
                 self.db.execute("INSERT INTO tasks VALUES (?,?)", (task_id, now))
             record = dict(id=new_id(), task_id=task_id, thread_id=thread_id, source=source, started=now, finished=None)
             self.db.execute("INSERT INTO recordings(id,task_id,thread_id,source,started,finished) VALUES (:id,:task_id,:thread_id,:source,:started,:finished)", record)
+            self.db.execute('INSERT INTO recording_builds VALUES (?,?)', (record['id'], json.dumps(application(), sort_keys=True)))
             if sample_case is not None:
                 self.db.execute('INSERT INTO sample_cases VALUES (?,?)', (record['id'], sample_case))
         return record
@@ -236,6 +236,8 @@ class Store:
         return self.describe(dict(row))
 
     def describe(self, record):
+        build = self.db.execute('SELECT data FROM recording_builds WHERE recording_id=?', (record['id'],)).fetchone()
+        record['application'] = json.loads(build['data']) if build else None
         sample = self.db.execute('SELECT name FROM sample_cases WHERE recording_id=?', (record['id'],)).fetchone()
         record['sample_case'] = sample['name'] if sample else None
         record['number'] = self.db.execute('SELECT COUNT(*) FROM recordings WHERE task_id=? AND rowid <= (SELECT rowid FROM recordings WHERE id=?)', (record['task_id'], record['id'])).fetchone()[0]
@@ -272,14 +274,16 @@ class Store:
             attempt=dict(row)
             history=[json.loads(item[0]) for item in self.db.execute('SELECT data FROM events WHERE recording_id=? ORDER BY occurred,event_id',(attempt['id'],))]
             summary=analyze(attempt,history)
-            attempts.append({'recording_id':attempt['id'],'outcome':summary['outcome'],'totals':summary['totals'],'coverage':summary['coverage']})
+            attempts.append({'recording_id':attempt['id'],'outcome':summary['outcome'],'totals':summary['totals'],'coverage':summary['coverage'],'counter_complete':summary['counter_complete']})
         report['task_summary']={'attempts':attempts,'observed_totals':{k:sum(a['totals'][k] for a in attempts if a['totals'][k] is not None) if any(a['totals'][k] is not None for a in attempts) else None for k in ('input','cached','output','reasoning')},
+                                'counter_complete':{k:all(a['counter_complete'][k] for a in attempts) for k in COUNTERS},
                                 'comparison_note':'Same task does not establish equivalent prompts, settings, or check coverage.'}
         return report
 
 
 def analyze(record, events):
     nodes, checks, security = {}, {}, []
+    assessments = {}
     usage_buckets, ambiguous = {}, set()
     changes = {'added': None, 'removed': None}
     warnings = set()
@@ -302,7 +306,7 @@ def analyze(record, events):
             if previous:
                 if any(usage[k] is not None and previous[k] is not None and usage[k] < previous[k] for k in COUNTERS):
                     warnings.add("Usage counter regressed; totals are incomplete")
-                if any(previous[k] is not None and usage[k] is not None and previous[k] != usage[k] for k in ('provider', 'model', 'harness', 'fixture_profile')):
+                if any(previous[k] is not None and usage[k] is not None and previous[k] != usage[k] for k in ('provider', 'model', 'harness', 'fixture_profile', 'adapter')):
                     ambiguous.add(key)
                     warnings.add('Model identity changed inside cumulative usage; per-model attribution unavailable')
             usage_buckets[key] = usage
@@ -311,7 +315,8 @@ def analyze(record, events):
             node["failures"] += event["status"] == "failed"
             node["tool_ms"] += event["duration_ms"] or 0
         elif kind == "check":
-            checks[event["check"]] = event["status"]
+            item = assessment(event) | {'execution_id': event['execution_id']}
+            assessments[(event['execution_id'], item['grader'], item['check'])] = item
         else:
             security.append({k:event[k] for k in ("action", "reasons", "duration_ms", "policy_digest")})
     for key in ambiguous:
@@ -321,7 +326,8 @@ def analyze(record, events):
         node['models'] = breakdown(usages)
         if usages:
             node['usage'] = sum_counters(usages)
-            for key in ('provider', 'model', 'harness', 'model_source', 'fixture_profile'):
+            node['counter_complete'] = counter_completeness(usages)
+            for key in ('provider', 'model', 'harness', 'model_source', 'fixture_profile', 'adapter'):
                 values = {u[key] for u in usages}
                 node['usage'][key] = next(iter(values)) if len(values) == 1 else None
             if any(any(u[k] is None for k in COUNTERS) for u in usages):
@@ -374,6 +380,10 @@ def analyze(record, events):
             pending.extend(n for n in ranked if n['parent_id']==item['id'])
         node['observed_subtree_tokens']=sum(subtree) if not cycle and all(n is not None for n in subtree) else None
     known_cost = [Decimal(n["simulated_usd"]) for n in ranked if n["simulated_usd"] is not None]
+    for item in assessments.values():
+        name = item['check'] if item['grader'] == 'weather-fixture-v1' else item['grader'] + ':' + item['check']
+        previous = checks.get(name, 'passed')
+        checks[name] = max((previous, item['status']), key={'passed': 0, 'failed': 1, 'error': 2}.get)
     outcome = "Ungraded"
     if checks:
         outcome = "Infrastructure error" if "error" in checks.values() else "Failed" if "failed" in checks.values() else "Passed supplied checks"
@@ -385,5 +395,6 @@ def analyze(record, events):
         findings.append({"observation": "Recorded failed tool calls; causal effect on answer quality is unknown", "count": failures})
     return dict(recording=record, totals=totals, changes=changes, models=breakdown(usage_buckets.values()), elapsed_seconds=(record["finished"] - record["started"]) if record["finished"] else None,
                 simulated_usd=str(sum(known_cost)) if known_cost else None, pricing_version="synthetic-v1", api_equivalent_usd=None, actual_billed_usd=None,
-                outcome=outcome, checks=checks, executions=ranked, security=security, tool_failures=failures,
+                outcome=outcome, checks=checks, assessments=list(assessments.values()),
+                counter_complete={k: bool(nodes) and all(n.get("counter_complete", {}).get(k, False) for n in nodes.values()) for k in COUNTERS}, executions=ranked, security=security, tool_failures=failures,
                 findings=findings, coverage="incomplete" if warnings else "available-events-consistent", warnings=sorted(warnings))

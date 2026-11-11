@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local Eval · Recordings</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
 <body><main>
-<header><span class="badge">LOCAL · METRICS ONLY</span><h1>Your agent work, explained.</h1><p>See the time, tokens, and cost of a recording. Explore agent activity when you need more detail.</p></header>
+<header><span class="badge">LOCAL · METRICS ONLY</span><h1>Your agent work, explained.</h1><p>See the time, tokens, and cost of a recording. Explore agent activity when you need more detail.</p><p id="app-version" class="muted"></p></header>
 <section id="login"><h2>Open your local recordings</h2><p>Run <code>python3 -m codex_eval panel</code> and enter its one-time code. Codes expire after 60 seconds.</p><form id="login-form"><label>One-time code<input id="code" type="password" required autocomplete="off"></label><button>Connect</button></form></section>
 <section id="workspace" hidden>
 <div class="notice"><strong>Live Codex capture is not connected.</strong> The examples below contain scripted sample data. They do not describe your conversations or real charges.</div>

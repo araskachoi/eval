@@ -167,6 +167,7 @@ def bundle(magen):
     digest = hashlib.sha256()
     with tarfile.open(fileobj=output,mode='w:') as archive:
         files = [(p,p.relative_to(ROOT).as_posix()) for folder in ('codex_eval','tests','scripts') for p in sorted((ROOT / folder).rglob('*')) if p.is_file() and p.suffix in {'.py','.html','.js','.css'}]
+        files.extend((ROOT / name, name) for name in ('pyproject.toml', 'integrations/codex/record/SKILL.md', 'integrations/codex/record/agents/openai.yaml'))
         if magen:
             files.extend((magen / 'gateway' / filename, 'gateway/' + filename) for filename in ('detectors.py','types.py'))
         for path,name in files:
@@ -184,7 +185,7 @@ def bundle(magen):
     return output.getvalue(),digest.hexdigest()
 
 
-def run_tests(magen):
+def run_tests(magen, export=True):
     evidence = verify_machine()
     image = json.loads(command('--connection',MACHINE,'image','inspect',IMAGE))[0]
     image_id = image['Id']
@@ -211,7 +212,7 @@ def run_tests(magen):
                 fixture_line=line[len('EVAL_FIXTURES:'):]
             else:
                 print(line)
-        if fixture_line:
+        if fixture_line and export:
             export_fixtures(json.loads(fixture_line))
     finally:
         command('--connection',MACHINE,'rm','--force',name)
@@ -258,6 +259,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation',choices=['preflight','test','hold','stage'])
     parser.add_argument('--magen',type=Path)
+    parser.add_argument('--no-export',action='store_true',help='Validate without adding sample recordings to the host app')
     args=parser.parse_args()
     try:
         if args.operation=='hold':
@@ -275,7 +277,7 @@ def main():
         elif args.operation=='preflight':
             print(json.dumps(verify_machine(),indent=2))
         else:
-            run_tests(args.magen)
+            run_tests(args.magen,export=not args.no_export)
     except KeyboardInterrupt:
         pass
     except (RuntimeError,ValueError,KeyError,OSError,subprocess.SubprocessError) as exc:

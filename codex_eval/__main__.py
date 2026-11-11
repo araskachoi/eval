@@ -12,6 +12,7 @@ from pathlib import Path
 from .core import LIMIT, Store, identifier, private_directory
 from .report import render
 from . import summary
+from .version import application
 
 
 def current_thread(explicit=None):
@@ -39,6 +40,8 @@ def control(state, request):
 
 def main():
     parser = argparse.ArgumentParser(description='Local metrics and Finish reports; no model calls')
+    build = application()
+    parser.add_argument('--version', action='version', version=f"Local Eval {build['version']} ({build['release_id']})")
     parser.add_argument('--state', type=Path, default=Path.home() / 'Library/Application Support/codex-eval')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('doctor')

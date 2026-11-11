@@ -14,6 +14,7 @@ from pathlib import Path
 from .core import LIMIT, Store, identifier, private_file
 from .report import render
 from .summary import agent_labels, fields, recording_details
+from .version import application
 
 
 def record_control(store, request):
@@ -45,6 +46,8 @@ class Service:
         self.ingestion_token = secrets.token_urlsafe(32)
         self.codes, self.sessions = {}, {}
         self.lock = threading.Lock()
+        self.updating = False
+        self.stop = None
         token = state / 'ingestion.token'
         private_file(token)
         token.write_text(self.ingestion_token)
@@ -54,13 +57,30 @@ class Service:
             store = Store(self.state)
             try:
                 action = request.get('action')
+                if action == 'version':
+                    return application()
+                if action == 'prepare_update':
+                    if store.db.execute('SELECT 1 FROM recordings WHERE finished IS NULL').fetchone():
+                        raise ValueError('Finish the recording before updating')
+                    self.updating = True
+                    return {'ready':True, 'application':application()}
+                if action == 'cancel_update':
+                    self.updating = False
+                    return {'ready':False}
+                if action == 'shutdown_for_update':
+                    if not self.updating or self.stop is None:
+                        raise ValueError('Prepare update first')
+                    threading.Thread(target=self.stop, daemon=True).start()
+                    return {'stopping':True}
+                if self.updating and (action == 'on' or action == 'record' and request.get('operation','start') == 'start'):
+                    raise ValueError('Update in progress; no new recording was opened')
                 if action == 'record':
                     return record_control(store, request)
                 if action == 'status':
                     recordings = store.list()
                     for record in recordings:
                         record.update(recording_details(record))
-                    return {'recordings':recordings, 'desktop_capture':'unverified', 'local_resources':'unavailable'}
+                    return {'recordings':recordings, 'desktop_capture':'unverified', 'local_resources':'unavailable', 'application':application(), 'updating':self.updating}
                 if action == 'on':
                     return store.start(request['thread_id'], request.get('task_id'))
                 if action == 'off':
@@ -189,6 +209,7 @@ def serve(state, port=8765):
     # Never unlink an existing socket: another collector may still own it.
     socket_path = state / 'control.sock'
     with HTTPServer(('127.0.0.1',port), Handler) as http:
+        service.stop = http.shutdown
         with socketserver.UnixStreamServer(str(socket_path), Control) as control:
             os.chmod(socket_path,0o600)
             threading.Thread(target=control.serve_forever, daemon=True).start()

@@ -4,6 +4,7 @@ let current = null;
 let historySignature = '';
 async function api(path, data) {
   const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Eval-Control':'1'}, body:JSON.stringify(data)});
+  if(response.status===401) { el('workspace').hidden=true; el('login').hidden=false; historySignature=''; }
   if (!response.ok) throw new Error(response.status === 401 ? 'Your connection expired. Get a new one-time code to reconnect.' : 'Could not open this recording. Reconnect or check that it is still available.');
   return response.json();
 }
@@ -57,8 +58,8 @@ function show(report) {
     for(const row of report.models) {
       const item=text('div','',el('models')); item.className='model-usage';
       text('strong',row.model||'Model not reported',item);
-      text('p',`${row.harness==='codex'?'Codex':row.harness==='claude-code'?'Claude Code':'Harness not reported'} · ${row.provider==='openai'?'OpenAI':row.provider==='anthropic'?'Anthropic':'Provider not reported'} · ${row.model_source==='response'?'Reported by provider response':row.model_source==='harness'?'Reported by harness':'Identity unavailable'}`,item);
-      text('p',`${number(row.tokens)} tokens · ${number(row.totals.cached)} cached input · Estimated USD unavailable${row.usage_complete?'':' · Partial usage'}`,item);
+      text('p',`${row.harness==='codex'?'Codex':row.harness==='claude-code'?'Claude Code':row.harness||'Harness not reported'} · ${row.provider==='openai'?'OpenAI':row.provider==='anthropic'?'Anthropic':row.provider||'Provider not reported'} · ${row.model_source==='response'?'Reported by provider response':row.model_source==='harness'?'Reported by harness':'Identity unavailable'}${row.adapter?' · '+row.adapter:''}`,item);
+      text('p',`${number(row.tokens)} tokens · ${number(row.counter_complete.cached?row.totals.cached:null)} cached input · Estimated USD unavailable${row.usage_complete?'':' · Partial usage'}`,item);
     }
   }
   el('warnings').replaceChildren();
@@ -68,7 +69,7 @@ function show(report) {
   for(const item of report.security) text('p',`${item.action==='block'?'MAGEN blocked a proposal':'Security inspection allowed a proposal'}${item.reasons.length?': '+item.reasons.map(r=>reasons[r]||'security policy').join(', '):''}.`,el('security'));
   el('outcome').textContent=outcome(report.outcome); el('checks').replaceChildren();
   const checkNames={coordinates:'Invalid location handling',display:'Weather display',timeout:'Timeout handling',auth:'Invalid API key handling',rate_limit:'Rate limit handling',unavailable:'Service outage handling',malformed:'Invalid response handling',units:'Temperature conversion'};
-  for(const [name,status] of Object.entries(report.checks)) text('p',`${checkNames[name]||'Weather behavior check'}: ${status==='passed'?'Passed':status==='failed'?'Failed':'Could not run'}`,el('checks'));
+  for(const item of report.assessments) text('p',`${checkNames[item.check]||item.check}: ${item.status} · ${item.grader} · ${item.scope} · ${item.provenance}`,el('checks'));
   el('findings').replaceChildren();
   const top=nodes.filter(n=>n.own_tokens!=null).sort((a,b)=>b.own_tokens-a.own_tokens)[0];
   if(top) text('p',nodes.length===1 ? `${labels[top.id]} used ${number(top.own_tokens)} tokens.` : `${labels[top.id]} used the most tokens: ${number(top.own_tokens)} for its own work.`,el('findings'));
@@ -84,7 +85,7 @@ function show(report) {
       button.onclick=()=>safe(()=>openRecording(record.recording_id));
     }
   }
-  el('diagnostics').textContent=JSON.stringify({recording_id:report.recording.id,task_id:report.recording.task_id,chat_id:report.recording.thread_id,analysis_version:report.analysis_version,models:report.models,executions:report.executions},null,2);
+  el('diagnostics').textContent=JSON.stringify({application:report.recording.application,recording_id:report.recording.id,task_id:report.recording.task_id,chat_id:report.recording.thread_id,analysis_version:report.analysis_version,models:report.models,executions:report.executions},null,2);
   el('analysis').scrollIntoView({block:'start'});
 }
 function drawTree() {
@@ -122,11 +123,14 @@ function historyRow(record,parent) {
 }
 async function refresh() {
   const status=await api('/control',{action:'status'});
-  const signature=JSON.stringify(status.recordings);
+  const build=status.application;
+  if(build) el('app-version').textContent=`Local Eval ${build.version} · ${build.release_id==='development'?'Development checkout':build.release_id}`;
+  if(status.updating) el('state').textContent='App update in progress. New recordings are temporarily paused.';
+  const signature=JSON.stringify([status.recordings,status.updating]);
   if(signature===historySignature) return;
   historySignature=signature;
   const active=status.recordings.find(r=>r.finished===null);
-  el('state').textContent=active ? 'A measurement window is open. Live desktop capture remains unverified.' : 'No measurement window is open.';
+  el('state').textContent=status.updating ? 'App update in progress. New recordings are temporarily paused.' : active ? 'A measurement window is open. Live desktop capture remains unverified.' : 'No measurement window is open.';
   for(const id of ['history','sample-history','sample-archive']) el(id).replaceChildren();
   const real=status.recordings.filter(r=>r.source!=='controlled-simulation');
   if(!real.length) text('p','No live recordings yet. You can explore the labeled samples below.',el('history'));

@@ -166,6 +166,32 @@ class AccountingTests(unittest.TestCase):
         self.store.db.commit()
         with self.assertRaises(ValueError): Store(Path(self.tmp.name)/'state')
 
+    def test_registered_assessments_preserve_scope_and_provenance(self):
+        self.execution()
+        payload = self.put('check', check='exact_match', grader='reference-match-v1', status='failed',
+                           answer='PRIVATE_ANSWER', reference='PRIVATE_REFERENCE')
+        self.assertFalse(self.store.ingest(payload))
+        self.node = new_id()
+        self.execution()
+        self.put('check', check='exact_match', grader='reference-match-v1', status='passed')
+        self.put('check', check='display', grader='weather-fixture-v1', status='passed')
+        report = self.store.finish(now=self.at+1)
+        self.assertEqual(report['outcome'], 'Failed')
+        self.assertEqual(len(report['assessments']), 3)
+        result = report['assessments'][0]
+        self.assertEqual(result['scope'], 'supplied-reference')
+        self.assertEqual(result['provenance'], 'trusted-emitter-comparison')
+        self.assertNotIn('PRIVATE_', json.dumps(report))
+        self.assertIn('reference-match-v1', render(report))
+        self.assertEqual(report['checks']['display'], 'passed')
+
+    def test_unregistered_checks_and_claimed_provenance_fail(self):
+        for fields in ({'check':'accuracy'}, {'grader':'PRIVATE_GRADER'}, {'scope':'weather-fixture'},
+                       {'provenance':'human-reviewed'}, {'status':'unknown'},
+                       {'check':'exact_match', 'grader':'weather-fixture-v1'}):
+            with self.assertRaises(ValueError):
+                self.put('check', **(dict(check='exact_match', grader='reference-match-v1', status='passed') | fields))
+
 
 class Scenarios(unittest.TestCase):
     def test_all_six_acceptance_walkthroughs(self):

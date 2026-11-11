@@ -39,10 +39,11 @@ def fields(report):
     seconds = report['elapsed_seconds']
     elapsed = 'In progress' if report['recording']['finished'] is None else 'Unavailable' if seconds is None else f'{seconds:,.1f} s'
     cached, inputs = totals['cached'], totals['input']
-    cache_complete = all(n['usage'] and n['usage']['cached'] is not None for n in report['executions'])
+    cache_complete = report['counter_complete']['cached'] and all(n['usage'] and n['usage']['cached'] is not None for n in report['executions'])
     cache = 'Unavailable' if not cache_complete or cached is None else known(cached)
     changes = report.get('changes', {})
     added, removed = changes.get('added'), changes.get('removed')
+    app = report['recording'].get('application')
     simulated = report['recording']['source'] == 'controlled-simulation'
     cost = report['simulated_usd'] if simulated else report['api_equivalent_usd']
     return {
@@ -55,6 +56,7 @@ def fields(report):
         'lines': 'Unavailable' if added is None or removed is None else f'+{added:,} −{removed:,}',
         'lines_added': known(added), 'lines_removed': known(removed),
         'model': 'Simulation — no AI model ran' if simulated else model_summary(report.get('models', [])),
+        'application': f"Local Eval {app['version']} · {app['release_id']}" if app else 'Recorded app version unavailable',
         'coverage': 'Partial observations' if report['coverage'] == 'incomplete' else 'Recorded events consistent',
         'outcome': report['outcome'],
     }
@@ -68,12 +70,14 @@ def execution_rows(report):
 def text(report):
     f = fields(report)
     lines = [recording_details(report['recording'])['title'], f['source'], f"Tokens: {f['tokens']} | Elapsed: {f['elapsed']} | {f['cost_label']}: {f['cost']} | Cached input: {f['cache']} | Cached output: {f['cached_output']} | Lines: {f['lines']}",
+             f['application'],
              f"Model: {f['model']}",
              f"{f['coverage']} · {f['outcome']}", f"Input: {f['input']} | Output: {f['output']} | Cache is a subset of input."]
     lines.extend(f'{name}: {tokens} own tokens · {status}' for name, tokens, status in execution_rows(report))
     if report['recording']['source'] != 'controlled-simulation':
         for row in report.get('models', []):
-            lines.append(f"{row['harness'] or 'Harness not reported'} | {row['provider'] or 'Provider not reported'} | {row['model'] or 'Model not reported'} | {row['model_source']} | {row['tokens'] if row['tokens'] is not None else 'Unavailable'} tokens | Estimated USD: unavailable")
+            lines.append(f"{row['harness'] or 'Harness not reported'} | {row['provider'] or 'Provider not reported'} | {row['model'] or 'Model not reported'} | {row['model_source']} | {row.get('adapter') or 'Adapter not reported'} | {row['tokens'] if row['tokens'] is not None else 'Unavailable'} tokens | Estimated USD: unavailable")
+    lines.extend(f"{a['check']}: {a['status']} | {a['grader']} | {a['scope']} | {a['provenance']}" for a in report.get('assessments', []))
     lines.append('USD is an estimate or simulation, never a billed amount. Missing values are unavailable, not zero.')
     return '\n'.join(lines) + '\n'
 

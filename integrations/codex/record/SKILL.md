@@ -5,6 +5,10 @@ description: Start or stop a measurement window for the current Codex chat, chec
 
 # Record this chat
 
+Use this skill from any local Codex chat or project. The controller checkout is
+only where the tool's code lives; the target is always the invoking chat's
+`CODEX_THREAD_ID`. Keep the user's project and task files in their own workspace.
+
 This is an installation template. Run `scripts/install_record_skill.py` from the
 Local Eval source checkout to substitute the commands below before using it.
 The installed commands below are bound to the Local Eval checkout, Python
