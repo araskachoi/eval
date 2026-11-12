@@ -100,6 +100,14 @@ def protocol_info(benchmark_id, protocol):
     return benchmark_definition(benchmark_id, protocol)[1]
 
 
+def submission_grader(name):
+    graders = {'ledger-cli-v1': ('ledger.py', grade_ledger),
+               'filesystem-organize-v1': ('organize.py', grade_filesystem)}
+    if name not in graders:
+        raise ValueError('Unknown benchmark grader')
+    return graders[name]
+
+
 def grade(run_path, output):
     if os.path.lexists(output):
         raise ValueError('Result already exists')
@@ -107,12 +115,10 @@ def grade(run_path, output):
     result = trial_metadata(turn)
     protocol = turn.get('protocol')
     benchmark, info = benchmark_definition(turn['benchmark'], protocol)
-    graders = {'ledger-cli-v1': ('ledger.py', grade_ledger),
-               'filesystem-organize-v1': ('organize.py', grade_filesystem)}
-    if (benchmark['grader'] not in graders or type(benchmark['max_turns']) is not int
+    filename, grader = submission_grader(benchmark['grader'])
+    if (type(benchmark['max_turns']) is not int
             or not result['turn'] <= benchmark['max_turns'] <= MAX_TURNS or not benchmark['checks']):
         raise ValueError('Invalid benchmark grader, checks, or turn limit')
-    filename, grader = graders[benchmark['grader']]
     submission = read_file(run_path.parent / filename, 65536)
     if not submission:
         raise ValueError('Empty submission')

@@ -44,7 +44,7 @@ ready to serve as an automatic live usage meter for public users.
 | Harness portability | A custom skills directory changes discovery only. Another harness still needs a verified identity and metrics adapter; cross-harness capture is not implemented. |
 | Installation | Source-checkout workflow; installer/integration assets are not included in the Python wheel. Manual publishing saves releases and refreshes the global skill. Paths must remain stable. No save watcher or launch-at-login service is installed. |
 | Availability | Collector must be running, either in a foreground terminal or started by the publisher. Managed updates refuse active windows; other restarts/crashes interrupt them. Inline cards are snapshots, and renderer support varies. |
-| Evaluation | Acceptance recordings and security checks are synthetic. They do not establish real-agent quality, live capture, MAGEN effectiveness, or a measured overhead budget. Paid/live model execution remains disabled. |
+| Evaluation | Acceptance recordings and security checks are synthetic. Explicit benchmark runs use Ollama or Codex CLI. Results characterize the selected model and harness on the benchmark task. |
 | Development tests | Tests require the dedicated VM and verified rootless containers. The launcher depends on separately provisioned local Podman/VM assets, so a fresh clone is not a turnkey test environment. |
 
 See [Interpretation and limits](#interpretation-and-limits), the
@@ -62,14 +62,14 @@ See [Interpretation and limits](#interpretation-and-limits), the
   isolated tests; Ollama is not required.
 - Six scripted acceptance walkthroughs and a fail-closed rootless-container
   launcher in a dedicated Linux VM.
-- Opt-in [model regression](regression/README.md) with isolated ledger grading
-  and comparison of manually managed results.
+- Opt-in [model regression](regression/README.md) with isolated ledger and
+  filesystem grading, resumable runs, and comparison of manually managed results.
 
 **This is an instrumented foundation, not verified live Codex desktop capture.**
 Record currently arms a window for explicitly correlated normalized events; it
 does not intercept the desktop app. No private Codex history or database is read.
-Controlled live model runs are disabled until credential handling and interception
-are independently verified. No paid execution is available in this release.
+The explicit regression runner uses synthetic tasks. Codex CLI inference uses
+credentials supplied to the trusted launcher and may incur API charges.
 
 ## Run locally
 

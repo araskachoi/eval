@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import shutil
@@ -39,7 +40,7 @@ def control(state, request):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Local metrics and Finish reports; no model calls')
+    parser = argparse.ArgumentParser(description='Local metrics, Finish reports, and explicit regression benchmarks')
     build = application()
     parser.add_argument('--version', action='version', version=f"Local Eval {build['version']} ({build['release_id']})")
     parser.add_argument('--state', type=Path, default=Path.home() / 'Library/Application Support/codex-eval')
@@ -80,6 +81,11 @@ def main():
     protocol = regression_commands.add_parser('protocol', help='Show the exact initial prompt and turn budget')
     protocol.add_argument('--benchmark', required=True)
     protocol.add_argument('--protocol')
+    run = regression_commands.add_parser('run', help='Run or resume an explicit benchmark')
+    run.add_argument('--spec', type=Path, required=True)
+    run.add_argument('--output', type=Path, required=True)
+    run.add_argument('--baseline', type=Path)
+    run.add_argument('--resume', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == 'regression':
@@ -89,9 +95,15 @@ def main():
                 result = regression.grade(args.run, args.output)
             elif args.operation == 'compare':
                 result = regression.compare(args.baseline, args.candidate)
+            elif args.operation == 'run':
+                from .benchmark_run import run
+                result = run(args.spec, args.output, baseline=args.baseline, resume=args.resume)
             else:
                 result = regression.protocol_info(args.benchmark, args.protocol)
-        except (KeyError, TypeError, AttributeError, RecursionError, OSError) as exc:
+        except KeyboardInterrupt:
+            parser.exit(130, 'Regression interrupted. Completed trials are available for resume.\n')
+        except (KeyError, TypeError, AttributeError, RecursionError, OSError,
+                http.client.HTTPException, subprocess.SubprocessError) as exc:
             parser.exit(2, f'Regression input or output failed ({type(exc).__name__}).\n')
         except ValueError as exc:
             parser.exit(2, f'Regression refused: {exc}\n')
@@ -104,7 +116,7 @@ def main():
         if args.command == 'doctor':
             executable = shutil.which('codex')
             version = subprocess.run([executable,'--version'],capture_output=True,text=True,timeout=5).stdout.strip() if executable else 'not found'
-            print(json.dumps({'codex':version,'desktop_capture':'unverified — no telemetry configured or private history read', 'live_benchmarks':'disabled pending isolated authentication design','resources':'unavailable; no attribution is fabricated','test_command':'python3 scripts/isolated.py test --magen /absolute/path/to/magen','dependencies':'standard library only'},indent=2))
+            print(json.dumps({'codex':version,'desktop_capture':'unverified — no telemetry configured or private history read', 'live_benchmarks':'explicit regression run with Ollama or Codex CLI','resources':'unavailable; no attribution is fabricated','test_command':'python3 scripts/isolated.py test --magen /absolute/path/to/magen','dependencies':'standard library only'},indent=2))
             return
         if args.command == 'acceptance':
             raise ValueError('Acceptance fixtures must run inside isolation: python3 scripts/isolated.py test')
