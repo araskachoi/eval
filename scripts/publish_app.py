@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 import fcntl
 import hashlib
 import json
@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from codex_eval.__main__ import control
 from codex_eval.core import private_directory
+from scripts import isolated
 
 RELEASE_ID = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{12}\Z')
 SKILL_FILES = ('SKILL.md', 'agents/openai.yaml')
@@ -68,15 +69,6 @@ def digest(files):
     return result.hexdigest()
 
 
-def validation_digest(root):
-    files = source_files(root)
-    for path in sorted((root / 'tests').glob('*.py')):
-        if path.is_symlink():
-            raise ValueError('Symlinked tests refused')
-        files[path.relative_to(root).as_posix()] = path.read_bytes()
-    return digest(files)
-
-
 def atomic(path, data):
     if path.is_symlink() or any(p.is_symlink() for p in path.parents):
         raise ValueError('Symlinked output refused')
@@ -105,8 +97,9 @@ def git_info(root):
         return None, None
 
 
-def make_release(root, directory, validation):
-    files = source_files(root)
+def make_release(root, directory, validation, *, files=None):
+    if files is None:
+        files = source_files(root)
     tree = ast.parse(files['codex_eval/version.py'])
     version = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'VERSION' for t in n.targets))
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
@@ -148,16 +141,17 @@ def verify_release(path):
     return manifest
 
 
-def isolated_checks(root, magen):
-    result = subprocess.run([sys.executable, str(root / 'scripts/isolated.py'), 'test', '--magen', str(magen), '--no-export'], cwd=root, capture_output=True, timeout=180)
-    if result.returncode:
-        raise ValueError('Isolated validation failed. Run scripts/isolated.py test to inspect; no release activated')
-    output = (result.stdout + result.stderr).decode(errors='replace')
-    match = re.search(r'Ran ([0-9]+) tests in', output)
-    if not match or 'OK' not in output:
+def isolated_checks(payload, inputs_digest):
+    try:
+        evidence, output = isolated.run_suite(payload, inputs_digest)
+    except (RuntimeError, OSError, subprocess.SubprocessError):
+        raise ValueError('Isolated validation failed. Run scripts/isolated.py test to inspect') from None
+    match = re.search(r'^Ran ([1-9][0-9]*) tests? in [0-9.]+s\n\nOK\s*$', output, re.MULTILINE)
+    if not match:
         raise ValueError('Validation evidence unavailable')
     print(f'Isolated checks passed: {match[1]} tests', flush=True)
-    return dict(passed=True, runner='dedicated-vm-rootless-container', tests=int(match[1]), checked_at=time.time())
+    return dict(passed=True, runner='dedicated-vm-rootless-container', tests=int(match[1]), checked_at=time.time(),
+                inputs_digest=evidence['source_digest'], image_id=evidence['image_id'])
 
 
 def collector_status(state):
@@ -192,6 +186,20 @@ def prepare(state):
     return status is not None
 
 
+@contextmanager
+def reserve_collector(state):
+    running = prepare(state)
+    try:
+        yield running
+    except BaseException:
+        if running:
+            try:
+                control(state, {'action': 'cancel_update'})
+            except (OSError, ValueError):
+                pass
+        raise
+
+
 def stop_collector(state):
     control(state, {'action':'shutdown_for_update'})
     deadline = time.monotonic() + 8
@@ -201,6 +209,15 @@ def stop_collector(state):
         raise ValueError('Collector did not stop; activation refused')
     process = PROCESSES.pop(str(state), None)
     if process is not None:
+        process.wait(timeout=3)
+
+
+def terminate(process):
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
         process.wait(timeout=3)
 
 
@@ -229,9 +246,7 @@ def start_collector(release, cfg):
             time.sleep(.05)
         raise ValueError('Published collector failed its startup health check')
     except BaseException:
-        process.terminate()
-        try: process.wait(timeout=3)
-        except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=3)
+        terminate(process)
         raise
 
 
@@ -288,9 +303,7 @@ def activate(release, cfg, app_dir, reserved, adopt=False):
             return updated
         except BaseException:
             if process is not None:
-                process.terminate()
-                try: process.wait(timeout=3)
-                except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=3)
+                terminate(process)
                 PROCESSES.pop(str(state), None)
             try:
                 if changed:
@@ -316,6 +329,39 @@ def publisher_lock(app_dir):
         yield
 
 
+def publish_config(args, cfg, configured):
+    defaults = {
+        'state': str(Path.home() / 'Library/Application Support/codex-eval'),
+        'skills_dir': str(Path.home() / '.codex/skills'),
+        'python': sys.executable,
+        'port': 8765,
+    }
+    cfg = defaults | cfg
+    for name in ('state', 'skills_dir', 'magen'):
+        path = getattr(args, name)
+        if path is None:
+            continue
+        value = str(path.expanduser().absolute())
+        if configured and name in ('state', 'skills_dir') and value != cfg[name]:
+            raise ValueError('Changing managed state or skill location requires a separate installation')
+        cfg[name] = value
+    if args.port is not None:
+        cfg['port'] = args.port
+    if not 1 <= cfg['port'] <= 65535 or not cfg.get('magen'):
+        raise ValueError('First publish requires --magen PATH and a valid local port')
+    return cfg
+
+
+def checked_release(releases, magen):
+    files = source_files(ROOT)
+    payload, inputs_digest = isolated.bundle(magen, root=ROOT, release_files=files)
+    validation = isolated_checks(payload, inputs_digest)
+    current = source_files(ROOT)
+    if current != files or isolated.bundle(magen, root=ROOT, release_files=files)[1] != inputs_digest:
+        raise ValueError('Validation inputs changed during testing; publish again after edits are finished')
+    return make_release(ROOT, releases, validation, files=files)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -332,68 +378,48 @@ def main():
     rollback.add_argument('release_id')
     args = parser.parse_args()
     os.umask(0o077)
-    reserved = False
-    state = None
     try:
         app_dir = private_directory(ROOT / '.runtime/app')
         releases = private_directory(app_dir / 'releases')
         config_path = app_dir / 'install.json'
-        cfg = json.loads(config_path.read_text()) if config_path.exists() else {}
-        if args.command == 'versions':
-            for release in sorted(releases.iterdir()):
-                if RELEASE_ID.fullmatch(release.name):
-                    info = verify_release(release)
-                    print(f"{release.name}{'  ACTIVE' if cfg.get('active') == release.name else ''}  git={info['git_commit'] or 'unavailable'}{' (dirty source)' if info['git_dirty'] else ''}")
-            return
-        if args.command == 'status':
-            print(json.dumps(cfg, indent=2))
-            return
-        if args.command == 'publish':
-            defaults = dict(state=str(Path.home() / 'Library/Application Support/codex-eval'), skills_dir=str(Path.home() / '.codex/skills'), python=sys.executable, port=8765)
-            cfg = defaults | cfg
-            for name in ('state', 'skills_dir', 'magen'):
-                value = getattr(args, name)
-                if value is not None:
-                    value = str(value.expanduser().absolute())
-                    if config_path.exists() and name in ('state','skills_dir') and value != cfg[name]:
-                        raise ValueError('Changing managed state or skill location requires a separate installation')
-                    cfg[name] = value
-            if args.port is not None: cfg['port'] = args.port
-            if not 1 <= cfg['port'] <= 65535 or not cfg.get('magen'):
-                raise ValueError('First publish requires --magen PATH and a valid local port')
-        elif not cfg:
-            raise ValueError('No managed release exists; publish first')
-        state = private_directory(Path(cfg['state']))
-        with publisher_lock(app_dir):
-            reserved = prepare(state)
-            check_database(state, {'schema_versions':[0,1]})
+        with ExitStack() as resources:
+            if args.command not in ('versions', 'status'):
+                resources.enter_context(publisher_lock(app_dir))
+            configured = config_path.exists()
+            cfg = json.loads(config_path.read_text()) if configured else {}
+            if args.command == 'versions':
+                for release in sorted(releases.iterdir()):
+                    if RELEASE_ID.fullmatch(release.name):
+                        info = verify_release(release)
+                        print(f"{release.name}{'  ACTIVE' if cfg.get('active') == release.name else ''}  git={info['git_commit'] or 'unavailable'}{' (dirty source)' if info['git_dirty'] else ''}")
+                return
+            if args.command == 'status':
+                print(json.dumps(cfg, indent=2))
+                return
+            if args.command == 'publish':
+                cfg = publish_config(args, cfg, configured)
+            elif not cfg:
+                raise ValueError('No managed release exists; publish first')
+            state = private_directory(Path(cfg['state']))
+            reserved = resources.enter_context(reserve_collector(state))
+            check_database(state, {'schema_versions': [0, 1]})
             if args.command == 'stop':
-                if reserved: stop_collector(state)
-                reserved = False
+                if reserved:
+                    stop_collector(state)
                 print('Collector stopped; releases and recordings retained.')
                 return
             if args.command == 'publish':
-                before = validation_digest(ROOT)
-                validation = isolated_checks(ROOT, Path(cfg['magen']))
-                if validation_digest(ROOT) != before:
-                    raise ValueError('Source changed during validation; publish again after edits are finished')
-                validation['inputs_digest'] = before
-                release = make_release(ROOT, releases, validation)
+                release = checked_release(releases, Path(cfg['magen']))
             else:
                 if not RELEASE_ID.fullmatch(args.release_id):
                     raise ValueError('Select an exact release ID from versions')
                 release = releases / args.release_id
             updated = activate(release, cfg, app_dir, reserved, adopt=getattr(args,'adopt_skill',False))
-            reserved = False
             print(f"Active: {updated['active']}\nApp: http://127.0.0.1:{updated['port']}/\nRecord skill refreshed. Reload the browser and obtain a fresh panel code.\nRecordings were retained; rollback changes code, not data.")
     except KeyboardInterrupt:
         parser.exit(1, 'Publish interrupted; inspect status before retrying.\n')
     except (OSError, ValueError, KeyError, sqlite3.Error, subprocess.SubprocessError) as exc:
         parser.exit(1, f'Update refused: {exc}\n')
-    finally:
-        if reserved and state is not None:
-            try: control(state, {'action':'cancel_update'})
-            except (OSError, ValueError): pass
 
 
 if __name__ == '__main__':

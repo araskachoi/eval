@@ -11,8 +11,8 @@ import time
 import uuid
 from decimal import Decimal
 from pathlib import Path
-from .models import COUNTERS, breakdown, counter_completeness, identity, sum_counters
 from .checks import assessment
+from .models import COUNTERS, breakdown, counter_completeness, identity, sum_counters
 from .version import application
 
 LIMIT = 128 * 1024
@@ -136,6 +136,7 @@ class Store:
           CREATE TABLE IF NOT EXISTS events(
             event_id TEXT PRIMARY KEY, recording_id TEXT REFERENCES recordings(id) ON DELETE CASCADE,
             occurred REAL NOT NULL, data TEXT NOT NULL);
+          CREATE INDEX IF NOT EXISTS events_by_recording ON events(recording_id, occurred, event_id);
           CREATE TABLE IF NOT EXISTS analyses(
             recording_id TEXT REFERENCES recordings(id) ON DELETE CASCADE,
             version INTEGER, digest TEXT, data TEXT, PRIMARY KEY(recording_id,version));
@@ -201,7 +202,7 @@ class Store:
 
     def ingest(self, payload):
         record_id = identifier(payload["recording_id"])
-        record = self.recording(record_id)
+        record = self.recording_row(record_id)
         event = normalize(payload["event"])
         if event["thread_id"] != record["thread_id"]:
             raise ValueError("Event is not correlated to the selected chat")
@@ -209,9 +210,9 @@ class Store:
         if at < record["started"] or (record["finished"] is not None and at > record["finished"]) or at > time.time() + 5:
             raise ValueError("Event outside the recording boundary")
         data = json.dumps(event, sort_keys=True, separators=(",", ":"))
-        old = self.db.execute("SELECT data FROM events WHERE event_id=?", (event["event_id"],)).fetchone()
+        old = self.db.execute("SELECT recording_id,data FROM events WHERE event_id=?", (event["event_id"],)).fetchone()
         if old:
-            if normalize(json.loads(old['data'])) != event:
+            if old['recording_id'] != record_id or normalize(json.loads(old['data'])) != event:
                 raise ValueError("Conflicting duplicate event")
             return False
         if event['kind'] == 'usage':
@@ -230,10 +231,13 @@ class Store:
         return True
 
     def recording(self, record_id):
+        return self.describe(dict(self.recording_row(record_id)))
+
+    def recording_row(self, record_id):
         row = self.db.execute("SELECT * FROM recordings WHERE id=?", (identifier(record_id),)).fetchone()
         if not row:
             raise ValueError("Recording not found")
-        return self.describe(dict(row))
+        return row
 
     def describe(self, record):
         build = self.db.execute('SELECT data FROM recording_builds WHERE recording_id=?', (record['id'],)).fetchone()
@@ -258,8 +262,7 @@ class Store:
     def report(self, record_id):
         self.purge()
         record = self.recording(record_id)
-        events = [json.loads(row[0]) for row in self.db.execute("SELECT data FROM events WHERE recording_id=? ORDER BY occurred,event_id", (record_id,))]
-        report = analyze(record, events)
+        report = self.analyze_recording(record)
         serialized = json.dumps(report, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(serialized.encode()).hexdigest()
         last = self.db.execute("SELECT version,digest FROM analyses WHERE recording_id=? ORDER BY version DESC LIMIT 1", (record_id,)).fetchone()
@@ -269,16 +272,71 @@ class Store:
             with self.db:
                 self.db.execute("INSERT INTO analyses VALUES (?,?,?,?)", (record_id, version, digest, serialized))
         report["analysis_version"] = version
-        attempts=[]
-        for row in self.db.execute('SELECT * FROM recordings WHERE task_id=? ORDER BY started', (record['task_id'],)):
-            attempt=dict(row)
-            history=[json.loads(item[0]) for item in self.db.execute('SELECT data FROM events WHERE recording_id=? ORDER BY occurred,event_id',(attempt['id'],))]
-            summary=analyze(attempt,history)
-            attempts.append({'recording_id':attempt['id'],'outcome':summary['outcome'],'totals':summary['totals'],'coverage':summary['coverage'],'counter_complete':summary['counter_complete']})
-        report['task_summary']={'attempts':attempts,'observed_totals':{k:sum(a['totals'][k] for a in attempts if a['totals'][k] is not None) if any(a['totals'][k] is not None for a in attempts) else None for k in ('input','cached','output','reasoning')},
-                                'counter_complete':{k:all(a['counter_complete'][k] for a in attempts) for k in COUNTERS},
-                                'comparison_note':'Same task does not establish equivalent prompts, settings, or check coverage.'}
+        report['task_summary'] = self.task_summary(report)
         return report
+
+    def analyze_recording(self, record):
+        rows = self.db.execute(
+            'SELECT data FROM events WHERE recording_id=? ORDER BY occurred,event_id', (record['id'],)
+        )
+        return analyze(record, (json.loads(row['data']) for row in rows))
+
+    def task_summary(self, report):
+        current = report['recording']
+        attempts = []
+        rows = self.db.execute('''
+            SELECT recordings.*, sample_cases.name AS sample_case
+            FROM recordings LEFT JOIN sample_cases ON sample_cases.recording_id=recordings.id
+            WHERE task_id=? ORDER BY started
+        ''', (current['task_id'],))
+        for row in rows:
+            if row['id'] == current['id']:
+                summary = report
+            else:
+                summary = self.analyze_recording(dict(row))
+            attempts.append({
+                'recording_id': row['id'],
+                **{key: summary[key] for key in ('outcome', 'totals', 'coverage', 'counter_complete')},
+            })
+        return {
+            'attempts': attempts,
+            'observed_totals': sum_counters(attempt['totals'] for attempt in attempts),
+            'counter_complete': {key: all(a['counter_complete'][key] for a in attempts) for key in COUNTERS},
+            'comparison_note': 'Same task does not establish equivalent prompts, settings, or check coverage.',
+        }
+
+
+def aggregate_subtrees(nodes, warnings):
+    remaining_children = dict.fromkeys(nodes, 0)
+    for node in nodes.values():
+        parent = node['parent_id']
+        if parent in nodes:
+            remaining_children[parent] += 1
+        elif parent is not None:
+            warnings.add('Missing parent execution')
+        node['observed_subtree_tokens'] = node['own_tokens']
+
+    # Process leaves first so every child has contributed before its parent is visited.
+    leaves = [key for key, count in remaining_children.items() if count == 0]
+    while leaves:
+        child = nodes[leaves.pop()]
+        parent_id = child['parent_id']
+        if parent_id not in nodes:
+            continue
+        parent = nodes[parent_id]
+        child_tokens = child['observed_subtree_tokens']
+        parent_tokens = parent['observed_subtree_tokens']
+        parent['observed_subtree_tokens'] = (
+            parent_tokens + child_tokens if parent_tokens is not None and child_tokens is not None else None
+        )
+        remaining_children[parent_id] -= 1
+        if remaining_children[parent_id] == 0:
+            leaves.append(parent_id)
+
+    for key, count in remaining_children.items():
+        if count:
+            warnings.add('Invalid execution cycle')
+            nodes[key]['observed_subtree_tokens'] = None
 
 
 def analyze(record, events):
@@ -321,8 +379,11 @@ def analyze(record, events):
             security.append({k:event[k] for k in ("action", "reasons", "duration_ms", "policy_digest")})
     for key in ambiguous:
         usage_buckets[key].update(provider=None, model=None, model_source='unknown', fixture_profile=None)
+    usage_by_execution = {}
+    for (execution_id, _), usage in usage_buckets.items():
+        usage_by_execution.setdefault(execution_id, []).append(usage)
     for node in nodes.values():
-        usages = [u for (execution_id, _), u in usage_buckets.items() if execution_id == node['id']]
+        usages = usage_by_execution.get(node['id'], ())
         node['models'] = breakdown(usages)
         if usages:
             node['usage'] = sum_counters(usages)
@@ -332,16 +393,6 @@ def analyze(record, events):
                 node['usage'][key] = next(iter(values)) if len(values) == 1 else None
             if any(any(u[k] is None for k in COUNTERS) for u in usages):
                 warnings.add('Token breakdown incomplete')
-        visited, cursor = set(), node
-        while cursor:
-            if cursor["id"] in visited:
-                warnings.add("Invalid execution cycle")
-                break
-            visited.add(cursor["id"])
-            parent = cursor["parent_id"]
-            if parent and parent not in nodes:
-                warnings.add("Missing parent execution")
-            cursor = nodes.get(parent)
         if not node["declared"]:
             warnings.add("Activity without an execution boundary")
     if not nodes:
@@ -366,19 +417,8 @@ def analyze(record, events):
         if record['source'] == 'controlled-simulation' and u and u['fixture_profile'] and all(u[k] is not None for k in ("input", "cached", "output")):
             # Test-only rates: $1/$0.25/$4 per million uncached/cached/output tokens.
             node["simulated_usd"] = str((Decimal(u["input"] - u["cached"]) + Decimal(u["cached"]) / 4 + Decimal(u["output"]) * 4) / 1000000)
+    aggregate_subtrees(nodes, warnings)
     ranked = sorted(nodes.values(), key=lambda n: (n["own_tokens"] is not None, n["own_tokens"] or 0), reverse=True)
-    for node in ranked:
-        subtree, seen, pending = [],set(),[node]
-        cycle=False
-        while pending:
-            item=pending.pop()
-            if item['id'] in seen:
-                cycle=True
-                break
-            seen.add(item['id'])
-            subtree.append(item['own_tokens'])
-            pending.extend(n for n in ranked if n['parent_id']==item['id'])
-        node['observed_subtree_tokens']=sum(subtree) if not cycle and all(n is not None for n in subtree) else None
     known_cost = [Decimal(n["simulated_usd"]) for n in ranked if n["simulated_usd"] is not None]
     for item in assessments.values():
         name = item['check'] if item['grader'] == 'weather-fixture-v1' else item['grader'] + ':' + item['check']

@@ -1,6 +1,8 @@
-# Local recordings, exports, VM images, and runtime credentials
+# Local recordings, exports, benchmark results, VM images, and runtime credentials
 /.runtime/
 /artifacts/
+/regression/results/*
+!/regression/results/.gitkeep
 *.db
 *.db-*
 *.sqlite

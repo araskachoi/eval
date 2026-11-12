@@ -113,12 +113,6 @@ def main():
             raise ValueError('Only stop/report can export a summary')
         state = private_directory(args.state)
         if args.command == 'collector':
-            if (state / 'control.sock').exists():
-                raise ValueError('Collector socket exists; run cleanup only if its collector has stopped')
-            # A previous interrupted recording never resumes automatically.
-            store = Store(state)
-            store.interrupt()
-            store.close()
             from .server import serve
             serve(state,args.port)
             return

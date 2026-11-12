@@ -33,7 +33,12 @@ def identity(event):
 
 
 def sum_counters(items):
-    return {key: sum(u[key] for u in items if u[key] is not None) if any(u[key] is not None for u in items) else None for key in COUNTERS}
+    totals = dict.fromkeys(COUNTERS)
+    for item in items:
+        for key in COUNTERS:
+            if item[key] is not None:
+                totals[key] = (totals[key] or 0) + item[key]
+    return totals
 
 
 def counter_completeness(items):

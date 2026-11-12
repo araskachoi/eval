@@ -9,7 +9,7 @@ import time
 import unittest
 
 from codex_eval.__main__ import control
-from codex_eval.core import new_id
+from codex_eval.core import Store, new_id
 
 
 class HttpTests(unittest.TestCase):
@@ -58,8 +58,57 @@ class HttpTests(unittest.TestCase):
 
     def test_ingestion_requires_separate_token(self):
         self.assertEqual(self.request('/ingest',{})[0],401)
+        self.assertEqual(self.request('/ingest', {}, Authorization='Bearer é')[0], 401)
         token=(self.state/'ingestion.token').read_text()
         self.assertEqual(self.request('/ingest',{},Authorization='Bearer '+token,Origin='https://attacker.invalid')[0],403)
+
+    def test_login_rejects_ambiguous_and_incomplete_bodies(self):
+        code = control(self.state, {'action': 'login'})['code']
+        body = json.dumps({'code': code})
+        origin = f'http://127.0.0.1:{self.port}'
+        headers = (f'POST /session HTTP/1.1\r\nHost: 127.0.0.1:{self.port}\r\n'
+                   f'Origin: {origin}\r\nX-Eval-Control: 1\r\nContent-Type: application/json\r\n')
+        length = f'Content-Length: {len(body)}'
+        for framing in (f'{length}\r\n{length}', f'Content-Length: {len(body) + 1}'):
+            with self.subTest(framing=framing):
+                with socket.create_connection(('127.0.0.1', self.port), timeout=3) as client:
+                    client.sendall((headers + framing + '\r\n\r\n' + body).encode())
+                    client.shutdown(socket.SHUT_WR)
+                    with http.client.HTTPResponse(client) as response:
+                        response.begin()
+                        self.assertEqual(response.status, 400)
+                        self.assertEqual(json.loads(response.read()), {'error': 'invalid_request_or_state'})
+        self.assertEqual(self.request('/session', {'code': code}, Origin=origin, **{'X-Eval-Control': '1'})[0], 200)
+
+    def test_private_socket_rejects_invalid_json_objects(self):
+        for raw in (b'[]\n', b'{"action":"status"}', b'[' * 2000 + b']' * 2000 + b'\n'):
+            with self.subTest(size=len(raw)), socket.socket(socket.AF_UNIX) as client:
+                client.settimeout(3)
+                client.connect(str(self.state / 'control.sock'))
+                client.sendall(raw)
+                client.shutdown(socket.SHUT_WR)
+                with client.makefile('rb') as stream:
+                    self.assertEqual(json.loads(stream.readline()), {'error': 'invalid_request_or_state'})
+
+    def test_failed_http_bind_preserves_recording_and_token(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            store = Store(state)
+            try:
+                record = store.start(new_id())
+                token = state / 'ingestion.token'
+                token.touch(mode=0o600)
+                token.write_text('existing-token')
+                result = subprocess.run(
+                    [sys.executable, '-m', 'codex_eval', '--state', str(state), 'collector', 'start', '--port', str(self.port)],
+                    capture_output=True, timeout=5,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIsNone(store.recording(record['id'])['finished'])
+                self.assertEqual(token.read_text(), 'existing-token')
+                self.assertFalse((state / 'control.sock').exists())
+            finally:
+                store.close()
 
     def test_socket_controls_record_and_finish_without_model(self):
         record=control(self.state,{'action':'on','thread_id':new_id()})

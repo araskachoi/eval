@@ -1,12 +1,15 @@
+import io
 import json
 from pathlib import Path
 import shutil
 import socket
 import sqlite3
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from codex_eval.__main__ import control
 from codex_eval.core import Store, new_id
@@ -46,6 +49,38 @@ class PublishTests(unittest.TestCase):
         (root/'codex_eval').mkdir(parents=True)
         (root/'codex_eval/secret.py').symlink_to(ROOT/'codex_eval/core.py')
         with self.assertRaises(ValueError): publisher.source_files(root)
+
+    def test_release_validation_covers_nested_fixtures_and_detector_source(self):
+        root = self.base / 'source'
+        fixture = root / 'tests/fixtures/nested.py'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b'fixture = 1\n')
+        magen = self.base / 'magen'
+        detector = magen / 'gateway/detectors.py'
+        detector.parent.mkdir(parents=True)
+        detector.write_bytes(b'detector = 1\n')
+        (detector.parent / 'types.py').write_bytes(b'')
+        files = {'codex_eval/example.py': b'release_value = 1\n'}
+
+        def change_detector_after_validation(payload, _):
+            with tarfile.open(fileobj=io.BytesIO(payload), mode='r:') as archive:
+                expected = files | {
+                    'tests/fixtures/nested.py': fixture.read_bytes(),
+                    'gateway/detectors.py': detector.read_bytes(),
+                    'gateway/types.py': b'',
+                    'gateway/__init__.py': b'',
+                }
+                self.assertEqual(set(archive.getnames()), expected.keys())
+                for name, data in expected.items():
+                    self.assertEqual(archive.extractfile(name).read(), data)
+            detector.write_bytes(b'detector = 2\n')
+            return PROOF
+
+        with (patch.object(publisher, 'ROOT', root), patch.object(publisher, 'source_files', return_value=files),
+              patch.object(publisher, 'isolated_checks', side_effect=change_detector_after_validation)):
+            with self.assertRaisesRegex(ValueError, 'Validation inputs changed'):
+                publisher.checked_release(self.releases, magen)
+        self.assertEqual(list(self.releases.iterdir()), [])
 
     def test_prepare_blocks_new_recordings_and_refuses_active_recording(self):
         state=self.base/'state'

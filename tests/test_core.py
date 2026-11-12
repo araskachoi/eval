@@ -4,7 +4,7 @@ import tempfile
 import time
 import unittest
 
-from codex_eval.core import Store, new_id, normalize
+from codex_eval.core import Store, analyze, new_id, normalize
 from codex_eval.report import render
 from codex_eval.scenarios import scenario
 
@@ -77,6 +77,13 @@ class AccountingTests(unittest.TestCase):
         p['event']['output']=90
         with self.assertRaises(ValueError): self.store.ingest(p)
 
+    def test_event_cannot_be_reused_for_a_different_recording(self):
+        payload = self.usage()
+        self.store.finish(now=self.at)
+        next_recording = self.store.start(self.thread, now=self.at)
+        with self.assertRaisesRegex(ValueError, 'Conflicting duplicate'):
+            self.store.ingest(payload | {'recording_id': next_recording['id']})
+
     def test_inclusive_usage_rejected(self):
         with self.assertRaises(ValueError): self.put('usage',scope='inclusive',mode='cumulative')
 
@@ -140,7 +147,25 @@ class AccountingTests(unittest.TestCase):
     def test_cycle_warns(self):
         self.put('execution',status='completed',parent_id=self.node)
         self.usage()
-        self.assertIn('Invalid execution cycle',self.store.finish()['warnings'])
+        report = self.store.finish()
+        self.assertIn('Invalid execution cycle', report['warnings'])
+        self.assertIsNone(report['executions'][0]['observed_subtree_tokens'])
+
+    def test_deep_execution_chain_aggregates_with_missing_parent_and_usage(self):
+        def events():
+            for index in range(1500):
+                node = str(index)
+                yield dict(kind='execution', execution_id=node, parent_id=str(index - 1), status='completed')
+                if index != 1:
+                    yield dict(kind='usage', execution_id=node, input=2, output=1, cached=0, reasoning=0)
+
+        report = analyze(self.record, events())
+        totals = {node['id']: node['observed_subtree_tokens'] for node in report['executions']}
+        self.assertIsNone(totals['0'])
+        self.assertIsNone(totals['1'])
+        self.assertEqual(totals['2'], 1498 * 3)
+        self.assertEqual(totals['1499'], 3)
+        self.assertIn('Missing parent execution', report['warnings'])
 
     def test_invalid_counters(self):
         for value in (-1,True,1.5,10**20):
@@ -200,6 +225,8 @@ class Scenarios(unittest.TestCase):
             results={name:scenario(store,name) for name in ('desktop','multi','subagents','ledger-repair','blocked','partial')}
             self.assertEqual(results['desktop'][0]['outcome'],'Ungraded')
             self.assertEqual(results['desktop'][0]['coverage'],'incomplete')
+            desktop_attempt = results['desktop'][0]['task_summary']['attempts'][0]
+            self.assertEqual(desktop_attempt['coverage'], results['desktop'][0]['coverage'])
             self.assertEqual(len(results['multi'][0]['executions']),2)
             self.assertEqual(len(results['subagents'][0]['executions']),3)
             self.assertEqual(results['subagents'][0]['totals']['input'],600)

@@ -1,4 +1,5 @@
 """Explicit, file-based model regression commands."""
+from itertools import islice
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from .regression_grader import digest, encode, grade_ledger
 ROOT = Path(__file__).resolve().parents[1] / 'regression' / 'benchmarks'
 SCHEMA = 1
 MAX_TURNS = 5
+MAX_RESULTS = 1000
 METRICS = ('input_tokens', 'output_tokens', 'cached_input_tokens', 'elapsed_ms')
 
 
@@ -115,7 +117,6 @@ def grade(run_path, output):
                   grading_ms=grading_ms, checks=checks)
     if protocol is not None:
         result['protocol'] = protocol
-    write_result(output, result)
     failed = [name for name, status in checks.items() if status == 'failed']
     status = outcome(result)
     feedback = benchmark['repair_prompt'] if status == 'failed' and result['turn'] < result['max_turns'] else None
@@ -125,6 +126,7 @@ def grade(run_path, output):
             feedback += '\n' + '\n'.join(f'- {name}: {hints[name]}' for name in failed)
         else:
             feedback += '\nFailed checks: ' + ', '.join(failed) + '.'
+    write_result(output, result)
     return {'result': str(output), 'status': status, 'failed_checks': failed, 'repair_prompt': feedback}
 
 
@@ -139,12 +141,16 @@ def same(values, field):
 
 
 def load_trials(directory):
-    paths = sorted(directory.glob('*.json'))
-    if not paths or len(paths) > 1000:
+    if not directory.is_dir():
+        raise ValueError('Expected a result directory')
+    with os.scandir(directory) as entries:
+        names = (entry.name for entry in entries if entry.name.endswith('.json'))
+        names = sorted(islice(names, MAX_RESULTS + 1))
+    if not names or len(names) > MAX_RESULTS:
         raise ValueError('Expected between 1 and 1,000 result files in each directory')
     trials = {}
-    for path in paths:
-        row = json.loads(read_file(path, 131072))
+    for name in names:
+        row = json.loads(read_file(directory / name, 131072))
         row.update(trial_metadata(row))
         if (type(row['max_turns']) is not int or not row['turn'] <= row['max_turns'] <= MAX_TURNS
                 or not label(row['benchmark']) or not isinstance(row['checks'], dict) or not row['checks']
