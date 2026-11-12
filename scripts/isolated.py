@@ -11,6 +11,7 @@ import os
 import re
 import selectors
 from pathlib import Path
+import stat
 import subprocess
 import tarfile
 import time
@@ -24,6 +25,8 @@ if ROOT.parent.name == 'releases' and ROOT.parent.parent.name == 'app' and ROOT.
 BIN = RUNTIME / 'podman-package/podman.pkg/Payload/podman/bin'
 PODMAN = BIN / 'podman'
 IMAGE = 'docker.io/library/python@sha256:29434a59c93070e470f84663e4289026e04644ea44b5220ef7e07d653318ca1f'
+FILE_LIMIT = 1024 * 1024
+BUNDLE_LIMIT = 4 * FILE_LIMIT
 
 
 def environment():
@@ -171,27 +174,46 @@ raise SystemExit(result.returncode)
 '''
 
 
-def bundle(magen):
+def bundle(magen, *, root=ROOT, release_files=None):
+    suffixes = {'.py', '.html', '.js', '.css', '.json', '.md'}
+    folders = ['tests']
+    files = {} if release_files is None else release_files.copy()
+    paths = {}
+    if release_files is None:
+        folders.extend(('codex_eval', 'scripts', 'regression/benchmarks'))
+        for name in ('pyproject.toml', 'integrations/codex/record/SKILL.md', 'integrations/codex/record/agents/openai.yaml'):
+            paths[name] = root / name
+    for folder in folders:
+        for path in (root / folder).rglob('*'):
+            if path.suffix in suffixes and not path.is_dir():
+                paths[path.relative_to(root).as_posix()] = path
+    if magen:
+        for filename in ('detectors.py', 'types.py'):
+            paths['gateway/' + filename] = magen / 'gateway' / filename
+        files['gateway/__init__.py'] = b''
+
     output = io.BytesIO()
-    digest = hashlib.sha256()
-    with tarfile.open(fileobj=output,mode='w:') as archive:
-        files = [(p,p.relative_to(ROOT).as_posix()) for folder in ('codex_eval','tests','scripts','regression/benchmarks') for p in sorted((ROOT / folder).rglob('*')) if p.is_file() and p.suffix in {'.py','.html','.js','.css','.json','.md'}]
-        files.extend((ROOT / name, name) for name in ('pyproject.toml', 'integrations/codex/record/SKILL.md', 'integrations/codex/record/agents/openai.yaml'))
-        if magen:
-            files.extend((magen / 'gateway' / filename, 'gateway/' + filename) for filename in ('detectors.py','types.py'))
-        for path,name in files:
-            if path.is_symlink() or '__pycache__' in path.parts:
-                raise RuntimeError('Unexpected symlink/cache in staged source')
-            data = path.read_bytes()
-            digest.update(name.encode()+b'\0'+data)
+    with tarfile.open(fileobj=output, mode='w:') as archive:
+        for name in sorted(files.keys() | paths.keys()):
+            data = files[name] if name in files else read_test_input(paths[name])
+            if len(data) >= FILE_LIMIT or output.tell() + len(data) > BUNDLE_LIMIT:
+                raise ValueError('Validation input exceeds size limit')
             member = tarfile.TarInfo(name)
-            member.size,member.mode = len(data),0o600
-            archive.addfile(member,io.BytesIO(data))
-        if magen:
-            member=tarfile.TarInfo('gateway/__init__.py')
-            member.size=0
-            archive.addfile(member,io.BytesIO())
-    return output.getvalue(),digest.hexdigest()
+            member.size, member.mode = len(data), 0o600
+            archive.addfile(member, io.BytesIO(data))
+    payload = output.getvalue()
+    if len(payload) > BUNDLE_LIMIT:
+        raise ValueError('Validation bundle exceeds size limit')
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
+def read_test_input(path):
+    if '__pycache__' in path.parts or any(parent.is_symlink() for parent in path.parents):
+        raise ValueError('Unexpected symlink/cache in staged source')
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError('Expected a regular validation input')
+        return stream.read(FILE_LIMIT)
 
 
 def staged_image():
@@ -220,22 +242,26 @@ def container(image_id, bootstrap):
         command('--connection',MACHINE,'rm','--force',name)
 
 
-def run_tests(magen, export=True):
+def run_suite(payload, source_digest):
     evidence = verify_machine()
     image_id = staged_image()
-    payload,digest = bundle(magen)
     with container(image_id, BOOTSTRAP) as name:
-        evidence.update(image_id=image_id,source_digest=digest,network='none',uid=1000,mode='simulated acceptance; not a live model benchmark')
-        print(json.dumps(evidence,indent=2),flush=True)
-        output=workload(name,payload)
-        fixture_line=None
-        for line in output.splitlines():
-            if line.startswith('EVAL_FIXTURES:'):
-                fixture_line=line[len('EVAL_FIXTURES:'):]
-            else:
-                print(line)
-        if fixture_line and export:
-            export_fixtures(json.loads(fixture_line))
+        evidence.update(image_id=image_id, source_digest=source_digest, network='none', uid=1000,
+                        mode='simulated acceptance; not a live model benchmark')
+        print(json.dumps(evidence, indent=2), flush=True)
+        return evidence, workload(name, payload)
+
+
+def run_tests(magen, export=True):
+    _, output = run_suite(*bundle(magen))
+    fixture_line = None
+    for line in output.splitlines():
+        if line.startswith('EVAL_FIXTURES:'):
+            fixture_line = line[len('EVAL_FIXTURES:'):]
+        else:
+            print(line)
+    if fixture_line and export:
+        export_fixtures(json.loads(fixture_line))
 
 
 def export_fixtures(bundles):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import ExitStack, closing
 import hmac
 import json
 import os
@@ -15,6 +16,9 @@ from .core import LIMIT, Store, identifier, private_file
 from .report import render
 from .summary import agent_labels, fields, recording_details
 from .version import application
+
+REQUEST_ERRORS = (ValueError, KeyError, TypeError, OSError, OverflowError, RecursionError, sqlite3.Error)
+REQUEST_TIMEOUT = 3
 
 
 def record_control(store, request):
@@ -48,32 +52,38 @@ class Service:
         self.lock = threading.Lock()
         self.updating = False
         self.stop = None
-        token = state / 'ingestion.token'
-        private_file(token)
-        token.write_text(self.ingestion_token)
 
     def control(self, request):
+        if not isinstance(request, dict):
+            raise ValueError('Expected an object')
         with self.lock:
-            store = Store(self.state)
-            try:
-                action = request.get('action')
-                if action == 'version':
-                    return application()
+            action = request.get('action')
+            if action == 'version':
+                return application()
+            if action == 'cancel_update':
+                self.updating = False
+                return {'ready': False}
+            if action == 'shutdown_for_update':
+                if not self.updating or self.stop is None:
+                    raise ValueError('Prepare update first')
+                threading.Thread(target=self.stop, daemon=True).start()
+                return {'stopping': True}
+            if action == 'login':
+                now = time.monotonic()
+                self.codes = {key: expires for key, expires in self.codes.items() if expires > now}
+                if len(self.codes) >= 8:
+                    raise ValueError('Too many outstanding login codes')
+                code = secrets.token_urlsafe(24)
+                self.codes[code] = now + 60
+                return {'code': code, 'expires_in': 60}
+            if self.updating and (action == 'on' or action == 'record' and request.get('operation', 'start') == 'start'):
+                raise ValueError('Update in progress; no new recording was opened')
+            with closing(Store(self.state)) as store:
                 if action == 'prepare_update':
                     if store.db.execute('SELECT 1 FROM recordings WHERE finished IS NULL').fetchone():
                         raise ValueError('Finish the recording before updating')
                     self.updating = True
                     return {'ready':True, 'application':application()}
-                if action == 'cancel_update':
-                    self.updating = False
-                    return {'ready':False}
-                if action == 'shutdown_for_update':
-                    if not self.updating or self.stop is None:
-                        raise ValueError('Prepare update first')
-                    threading.Thread(target=self.stop, daemon=True).start()
-                    return {'stopping':True}
-                if self.updating and (action == 'on' or action == 'record' and request.get('operation','start') == 'start'):
-                    raise ValueError('Update in progress; no new recording was opened')
                 if action == 'record':
                     return record_control(store, request)
                 if action == 'status':
@@ -93,28 +103,20 @@ class Service:
                     return report
                 if action == 'ingest':
                     return {'accepted':store.ingest(request)}
-                if action == 'login':
-                    now = time.monotonic()
-                    self.codes = {k:v for k,v in self.codes.items() if v > now}
-                    if len(self.codes) >= 8:
-                        raise ValueError('Too many outstanding login codes')
-                    code = secrets.token_urlsafe(24)
-                    self.codes[code] = now + 60
-                    return {'code':code, 'expires_in':60}
                 raise ValueError('Unknown action')
-            finally:
-                store.close()
 
 
 def serve(state, port=8765):
-    if (state / 'control.sock').exists():
+    socket_path = state / 'control.sock'
+    if os.path.lexists(socket_path):
         raise ValueError('Collector socket exists; do not overwrite an active collector')
     service = Service(state)
-    origin = f'http://127.0.0.1:{port}'
+    bearer = f'Bearer {service.ingestion_token}'.encode()
     assets = Path(__file__).parent / 'web'
 
     class Handler(BaseHTTPRequestHandler):
         server_version = 'LocalEval'
+        timeout = REQUEST_TIMEOUT
 
         def log_message(self, *args):
             pass
@@ -134,7 +136,7 @@ def serve(state, port=8765):
             self.wfile.write(body)
 
         def host_ok(self):
-            return self.headers.get('Host') == f'127.0.0.1:{port}'
+            return self.headers.get_all('Host') == [authority]
 
         def authorized(self):
             cookies = dict(piece.strip().split('=',1) for piece in self.headers.get('Cookie','').split(';') if '=' in piece)
@@ -153,12 +155,11 @@ def serve(state, port=8765):
             self.send(404, {'error':'not_found'})
 
         def do_POST(self):
-            self.connection.settimeout(3)
             if not self.host_ok():
                 return self.send(403, {'error':'host_denied'})
             ingestion = self.path == '/ingest'
             if ingestion:
-                if not hmac.compare_digest(self.headers.get('Authorization',''), 'Bearer ' + service.ingestion_token):
+                if not hmac.compare_digest(self.headers.get('Authorization', '').encode(), bearer):
                     return self.send(401, {'error':'unauthorized'})
                 if self.headers.get('Origin'):
                     return self.send(403, {'error':'browser_ingestion_denied'})
@@ -167,12 +168,18 @@ def serve(state, port=8765):
             if not ingestion and self.path != '/session' and not self.authorized():
                 return self.send(401, {'error':'unauthorized'})
             try:
-                length = int(self.headers.get('Content-Length','0'))
-                if not 0 < length <= LIMIT or self.headers.get('Content-Encoding') or self.headers.get('Transfer-Encoding'):
+                lengths = self.headers.get_all('Content-Length', [])
+                if len(lengths) != 1 or 'Content-Encoding' in self.headers or 'Transfer-Encoding' in self.headers:
+                    raise ValueError('Invalid request framing')
+                length = int(lengths[0])
+                if not 0 < length <= LIMIT:
                     raise ValueError('Invalid request framing')
                 if self.headers.get('Content-Type') != 'application/json':
                     raise ValueError('Expected application/json')
-                request = json.loads(self.rfile.read(length))
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ValueError('Incomplete request body')
+                request = json.loads(raw)
                 if not isinstance(request, dict):
                     raise ValueError('Expected an object')
                 if self.path == '/session':
@@ -189,39 +196,41 @@ def serve(state, port=8765):
                 elif self.path != '/control' or request.get('action') not in {'status','on','off','report'}:
                     raise ValueError('Unsupported control')
                 self.send(200, service.control(request))
-            except (ValueError, KeyError, TypeError, OSError, sqlite3.Error):
+            except REQUEST_ERRORS:
                 # Error text may contain input or database paths; never return it.
                 self.send(400, {'error':'invalid_request_or_state'})
 
     class Control(socketserver.StreamRequestHandler):
+        timeout = REQUEST_TIMEOUT
+
         def handle(self):
-            self.connection.settimeout(3)
             try:
                 raw = self.rfile.readline(LIMIT + 1)
-                if len(raw) > LIMIT:
-                    raise ValueError('Too large')
+                if len(raw) > LIMIT or not raw.endswith(b'\n'):
+                    raise ValueError('Invalid request framing')
                 result = service.control(json.loads(raw))
                 response = {'result':result}
-            except (ValueError, KeyError, TypeError, OSError, sqlite3.Error):
+            except REQUEST_ERRORS:
                 response = {'error':'invalid_request_or_state'}
             self.wfile.write(json.dumps(response).encode() + b'\n')
 
-    # Never unlink an existing socket: another collector may still own it.
-    socket_path = state / 'control.sock'
     with HTTPServer(('127.0.0.1',port), Handler) as http:
+        authority = f'127.0.0.1:{http.server_port}'
+        origin = f'http://{authority}'
         service.stop = http.shutdown
-        with socketserver.UnixStreamServer(str(socket_path), Control) as control:
-            os.chmod(socket_path,0o600)
+        with ExitStack() as resources:
+            control = socketserver.UnixStreamServer(str(socket_path), Control)
+            resources.callback(socket_path.unlink, missing_ok=True)
+            resources.enter_context(control)
+            os.chmod(socket_path, 0o600)
+            token = state / 'ingestion.token'
+            private_file(token)
+            resources.callback(token.unlink, missing_ok=True)
+            token.write_text(service.ingestion_token)
+            store = resources.enter_context(closing(Store(state)))
+            store.interrupt()  # Close a recording left open by an interrupted collector.
+            resources.callback(store.interrupt)
             threading.Thread(target=control.serve_forever, daemon=True).start()
-            try:
-                print(f'Collector running at {origin}; desktop adapter unverified', flush=True)
-                http.serve_forever(poll_interval=0.5)
-            finally:
-                control.shutdown()
-                socket_path.unlink(missing_ok=True)
-                (state / 'ingestion.token').unlink(missing_ok=True)
-                store = Store(state)
-                try:
-                    store.interrupt()
-                finally:
-                    store.close()
+            resources.callback(control.shutdown)
+            print(f'Collector running at {origin}; desktop adapter unverified', flush=True)
+            http.serve_forever(poll_interval=0.5)
