@@ -56,3 +56,9 @@ class BenchmarkRunTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'symlinks'):
                     benchmark_run.run(spec, output, resume=True)
                 self.assertEqual(len(calls), 3)
+
+                candidate, baseline = root / 'candidate', root / 'saved-grades'
+                paired = benchmark_run.run(spec, candidate, baseline=baseline)
+                self.assertEqual(len(paired['comparison']['paired_trials']), 2)
+                self.assertEqual(benchmark_run.run(spec, candidate, baseline=baseline, resume=True), paired)
+                self.assertEqual(len(calls), 5)

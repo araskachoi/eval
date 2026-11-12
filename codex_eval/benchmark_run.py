@@ -151,7 +151,7 @@ def run(spec_path, output, baseline=None, resume=False):
             report['comparison'] = regression.compare(baseline, grades)
         summary_path = output / 'summary.json'
         if os.path.lexists(summary_path):
-            if read_json(summary_path, 2 * 1024 * 1024) != report:
+            if regression.encode(read_json(summary_path, 2 * 1024 * 1024)) != regression.encode(report):
                 raise ValueError('Saved summary differs from completed grades')
         else:
             regression.write_result(summary_path, report)
