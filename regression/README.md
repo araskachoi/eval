@@ -131,3 +131,32 @@ writes and removals to the disposable fixture with Landlock and blocks child
 process creation. The grader checks the exact tree, file contents and modes
 after each of two runs. It discards submission output and fails closed when the
 required sandbox controls are unavailable.
+
+## Run a baseline or candidate
+
+Save a run spec with the benchmark, protocol, harness, model and trial count.
+For Ollama, supply the installed local model ID and optionally its exact digest
+as `revision`.
+
+```json
+{"benchmark":"filesystem-v1","protocol":"independent","harness":"ollama","model":"gemma4:latest","trials":3}
+```
+
+```sh
+python3 -m codex_eval regression run --spec run.json --output regression/results/new-baseline
+```
+
+Use a new output directory for a fresh run. Add `--baseline PATH/grades` for a
+matched repeat or candidate. Comparisons require the same harness, settings,
+benchmark, grader profile and trial IDs. To recover an interrupted run, use the
+same arguments and add `--resume`. Completed trials are reused. An interrupted
+trial starts over and its earlier grade files remain in `attempts/`. Raw model
+text and submitted code are temporary. Result directories are user-managed.
+
+For Codex CLI, set `harness` to `codex` and provide an explicit available model ID.
+The optional `reasoning_effort` defaults to `medium`. Supply `CODEX_API_KEY` only
+to the trusted launcher. Codex uses an ephemeral session and temporary home,
+with shell execution, web search, apps, plugins, hooks and subagents disabled.
+The grader still runs in the existing network-disabled VM/container. The
+runner records requested Codex model identity, CLI version and reported usage.
+Hosted revision and served-model identity are unresolved in this CLI mode.
