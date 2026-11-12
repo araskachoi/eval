@@ -81,6 +81,9 @@ def main():
     protocol = regression_commands.add_parser('protocol', help='Show the exact initial prompt and turn budget')
     protocol.add_argument('--benchmark', required=True)
     protocol.add_argument('--protocol')
+    qualification = regression_commands.add_parser('qualify', help='Check trusted synthetic reference and failure probes')
+    qualification.add_argument('--benchmark', required=True)
+    qualification.add_argument('--protocol', required=True)
     run = regression_commands.add_parser('run', help='Run or resume an explicit benchmark')
     run.add_argument('--spec', type=Path, required=True)
     run.add_argument('--output', type=Path, required=True)
@@ -98,6 +101,9 @@ def main():
             elif args.operation == 'run':
                 from .benchmark_run import run
                 result = run(args.spec, args.output, baseline=args.baseline, resume=args.resume)
+            elif args.operation == 'qualify':
+                from .benchmark_qualification import qualify
+                result = qualify(args.benchmark, args.protocol)
             else:
                 result = regression.protocol_info(args.benchmark, args.protocol)
         except KeyboardInterrupt:
