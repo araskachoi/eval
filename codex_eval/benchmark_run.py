@@ -86,7 +86,7 @@ def run(spec_path, output, baseline=None, resume=False):
         raise ValueError('Invalid benchmark run spec')
     definition, protocol = regression.benchmark_definition(spec['benchmark'], spec.get('protocol'))
     count = spec.get('trials', 3)
-    if type(count) is not int or not 1 <= count or count * protocol['max_turns'] > 1000:
+    if type(count) is not int or not 1 <= count or count * protocol['max_turns'] > regression.MAX_RESULTS:
         raise ValueError('The planned run exceeds the grade-file limit')
     filename, grader = regression.submission_grader(definition['grader'])
     probe = next(iter(definition['checks']))
