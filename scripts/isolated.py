@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import io
 import json
@@ -17,7 +18,10 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 MACHINE = 'eval-sandbox'
-BIN = ROOT / '.runtime/podman-package/podman.pkg/Payload/podman/bin'
+RUNTIME = ROOT / '.runtime'
+if ROOT.parent.name == 'releases' and ROOT.parent.parent.name == 'app' and ROOT.parent.parent.parent.name == '.runtime':
+    RUNTIME = ROOT.parent.parent.parent
+BIN = RUNTIME / 'podman-package/podman.pkg/Payload/podman/bin'
 PODMAN = BIN / 'podman'
 IMAGE = 'docker.io/library/python@sha256:29434a59c93070e470f84663e4289026e04644ea44b5220ef7e07d653318ca1f'
 
@@ -26,8 +30,8 @@ def environment():
     # No model keys, user config, SSH agents, or application credentials are inherited.
     # Preserve the actual home for the trusted runtime client; never forward it to workloads.
     retained={key:os.environ[key] for key in ('HOME',) if key in os.environ}
-    return {**retained,'PATH':str(BIN)+':/usr/bin:/bin','XDG_CONFIG_HOME':str(ROOT / '.runtime/config'),
-            'XDG_DATA_HOME':str(ROOT / '.runtime/data'),'LANG':'C.UTF-8', 'CONTAINERS_MACHINE_PROVIDER':'applehv'}
+    return {**retained,'PATH':str(BIN)+':/usr/bin:/bin','XDG_CONFIG_HOME':str(RUNTIME / 'config'),
+            'XDG_DATA_HOME':str(RUNTIME / 'data'),'LANG':'C.UTF-8', 'CONTAINERS_MACHINE_PROVIDER':'applehv'}
 
 
 def command(*args, **kwargs):
@@ -41,7 +45,7 @@ def command(*args, **kwargs):
 
 def verify_machine():
     machine = json.loads(command('machine','inspect',MACHINE))[0]
-    config_path = ROOT / '.runtime/config/containers/podman/machine/applehv' / (MACHINE+'.json')
+    config_path = RUNTIME / 'config/containers/podman/machine/applehv' / (MACHINE+'.json')
     config = json.loads(config_path.read_text())
     if config.get('Mounts') != [] or config.get('HostUser',{}).get('Rootful') is not False or machine.get('Rootful') is not False or machine.get('State') != 'running':
         raise RuntimeError('VM must be running, rootless, and have no shared host mounts')
@@ -127,12 +131,16 @@ def workload(name,payload):
             process.stdin.close()
 
 
-BOOTSTRAP = r'''
-import io,json,os,pathlib,resource,subprocess,sys,tarfile
+GUEST_CHECKS = r'''
+import os,pathlib
 assert os.getuid()==1000 and pathlib.Path('/run/.containerenv').is_file()
 assert '0000000000000000' in next(x.split(':',1)[1].strip() for x in pathlib.Path('/proc/self/status').read_text().splitlines() if x.startswith('CapEff:'))
 assert next(x.split(':',1)[1].strip() for x in pathlib.Path('/proc/self/status').read_text().splitlines() if x.startswith('NoNewPrivs:'))=='1'
 assert set(os.listdir('/sys/class/net'))=={'lo'}
+'''
+
+BOOTSTRAP = GUEST_CHECKS + r'''
+import io,json,resource,subprocess,sys,tarfile
 resource.setrlimit(resource.RLIMIT_FSIZE,(16*1024*1024,16*1024*1024))
 data=sys.stdin.buffer.read(4*1024*1024+1)
 assert len(data)<=4*1024*1024
@@ -145,12 +153,13 @@ with tarfile.open(fileobj=io.BytesIO(data),mode='r:') as archive:
   destination.write_bytes(archive.extractfile(member).read())
 result=subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-v'],cwd='/work',timeout=60)
 if result.returncode==0:
+ sys.path.insert(0,'/work')
  from codex_eval.core import Store
  from codex_eval.scenarios import scenario
  from codex_eval.magen import MagenGate
  store=Store('/tmp/fixture-metrics')
  bundles=[]
- for name in ('desktop','multi','subagents','repair','blocked','partial'):
+ for name in ('desktop','multi','subagents','ledger-repair','blocked','partial'):
   reports=scenario(store,name,MagenGate.isolated_local())
   for report in reports:
    record=report['recording']
@@ -166,7 +175,7 @@ def bundle(magen):
     output = io.BytesIO()
     digest = hashlib.sha256()
     with tarfile.open(fileobj=output,mode='w:') as archive:
-        files = [(p,p.relative_to(ROOT).as_posix()) for folder in ('codex_eval','tests','scripts') for p in sorted((ROOT / folder).rglob('*')) if p.is_file() and p.suffix in {'.py','.html','.js','.css'}]
+        files = [(p,p.relative_to(ROOT).as_posix()) for folder in ('codex_eval','tests','scripts','regression/benchmarks') for p in sorted((ROOT / folder).rglob('*')) if p.is_file() and p.suffix in {'.py','.html','.js','.css','.json','.md'}]
         files.extend((ROOT / name, name) for name in ('pyproject.toml', 'integrations/codex/record/SKILL.md', 'integrations/codex/record/agents/openai.yaml'))
         if magen:
             files.extend((magen / 'gateway' / filename, 'gateway/' + filename) for filename in ('detectors.py','types.py'))
@@ -185,13 +194,16 @@ def bundle(magen):
     return output.getvalue(),digest.hexdigest()
 
 
-def run_tests(magen, export=True):
-    evidence = verify_machine()
+def staged_image():
     image = json.loads(command('--connection',MACHINE,'image','inspect',IMAGE))[0]
     image_id = image['Id']
     if not re.fullmatch(r'(sha256:)?[0-9a-f]{64}',image_id):
         raise RuntimeError('Image identity unavailable; stage a reviewed image first')
-    payload,digest = bundle(magen)
+    return image_id
+
+
+@contextmanager
+def container(image_id, bootstrap):
     name='eval-test-'+uuid.uuid4().hex
     command('--connection',MACHINE,'create','--name',name,'--network','none','--user','1000:1000',
             '--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','64',
@@ -199,10 +211,20 @@ def run_tests(magen, export=True):
             '--tmpfs','/work:rw,nosuid,nodev,noexec,size=64m,mode=1777',
             '--tmpfs','/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777','--workdir','/work',
             '--env','PYTHONDONTWRITEBYTECODE=1','--env','PYTHONPATH=/work',
-            '--http-proxy=false','--entrypoint','python','--interactive',image_id,'-c',BOOTSTRAP)
+            '--http-proxy=false','--entrypoint','python','--interactive',image_id,'-I','-c',bootstrap)
     try:
         inspect=json.loads(command('--connection',MACHINE,'inspect',name))[0]
         verify_container(inspect)
+        yield name
+    finally:
+        command('--connection',MACHINE,'rm','--force',name)
+
+
+def run_tests(magen, export=True):
+    evidence = verify_machine()
+    image_id = staged_image()
+    payload,digest = bundle(magen)
+    with container(image_id, BOOTSTRAP) as name:
         evidence.update(image_id=image_id,source_digest=digest,network='none',uid=1000,mode='simulated acceptance; not a live model benchmark')
         print(json.dumps(evidence,indent=2),flush=True)
         output=workload(name,payload)
@@ -214,8 +236,6 @@ def run_tests(magen, export=True):
                 print(line)
         if fixture_line and export:
             export_fixtures(json.loads(fixture_line))
-    finally:
-        command('--connection',MACHINE,'rm','--force',name)
 
 
 def export_fixtures(bundles):
@@ -226,7 +246,7 @@ def export_fixtures(bundles):
     from codex_eval.report import render
     if not isinstance(bundles,list) or len(bundles)!=7:
         raise RuntimeError('Unexpected fixture export')
-    approved={'desktop','multi','subagents','repair','blocked','partial'}
+    approved={'desktop','multi','subagents','ledger-repair','blocked','partial'}
     validated=[]
     for bundle in bundles:
         if bundle['scenario'] not in approved or len(bundle['events'])>100:

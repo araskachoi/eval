@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 from codex_eval.core import Store
 from codex_eval.magen import MagenGate
-from codex_eval.weather import FakeWeather,load_weather
 
 
 class SecurityTests(unittest.TestCase):
@@ -39,7 +38,7 @@ class SecurityTests(unittest.TestCase):
             self.assertEqual(result['action'],'block')
             self.assertNotIn(text,json.dumps(result))
         self.assertEqual(endpoint_calls,[])
-        self.assertEqual(gate.inspect('Check the supplied weather timeout fixture.','unknown')['action'],'allow')
+        self.assertEqual(gate.inspect('Check the supplied ledger fixture.','unknown')['action'],'allow')
 
     def test_detector_crash_blocks(self):
         class Broken:
@@ -61,23 +60,3 @@ class SecurityTests(unittest.TestCase):
             root.mkdir(mode=0o755)
             root.chmod(0o755)
             with self.assertRaises(ValueError): Store(root)
-
-
-class WeatherTests(unittest.TestCase):
-    def test_success_and_units(self):
-        self.assertEqual(load_weather(FakeWeather(),37,-122)['temperature'],20)
-        self.assertEqual(load_weather(FakeWeather(),37,-122,True)['temperature'],68)
-
-    def test_invalid_coordinates_never_reach_transport(self):
-        transport=FakeWeather()
-        for lat,lon in [('nan',0),(91,0),(0,181),('',0)]:
-            self.assertIn('error',load_weather(transport,lat,lon))
-        self.assertEqual(transport.calls,0)
-
-    def test_errors_and_retry(self):
-        for mode in ('auth','rate_limit','unavailable','timeout','malformed'):
-            self.assertIn('error',load_weather(FakeWeather(mode),37,-122))
-        self.assertNotIn('error',load_weather(FakeWeather(),37,-122))
-
-    def test_fake_credentials_not_returned(self):
-        self.assertNotIn('key',json.dumps(load_weather(FakeWeather(),37,-122)).lower())

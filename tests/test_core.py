@@ -197,7 +197,7 @@ class Scenarios(unittest.TestCase):
     def test_all_six_acceptance_walkthroughs(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Store(Path(tmp)/'state')
-            results={name:scenario(store,name) for name in ('desktop','multi','subagents','repair','blocked','partial')}
+            results={name:scenario(store,name) for name in ('desktop','multi','subagents','ledger-repair','blocked','partial')}
             self.assertEqual(results['desktop'][0]['outcome'],'Ungraded')
             self.assertEqual(results['desktop'][0]['coverage'],'incomplete')
             self.assertEqual(len(results['multi'][0]['executions']),2)
@@ -207,10 +207,10 @@ class Scenarios(unittest.TestCase):
             self.assertEqual(root['observed_subtree_tokens'],850)
             self.assertEqual(root['own_tokens'],140)
             self.assertEqual(results['subagents'][0]['tool_failures'],1)
-            self.assertEqual(results['repair'][0]['outcome'],'Failed')
-            self.assertEqual(results['repair'][1]['outcome'],'Passed supplied checks')
-            self.assertEqual(results['repair'][0]['recording']['task_id'],results['repair'][1]['recording']['task_id'])
-            self.assertEqual(len(results['repair'][1]['task_summary']['attempts']),2)
+            self.assertEqual(results['ledger-repair'][0]['outcome'],'Failed')
+            self.assertEqual(results['ledger-repair'][1]['outcome'],'Passed supplied checks')
+            self.assertEqual(results['ledger-repair'][0]['recording']['task_id'],results['ledger-repair'][1]['recording']['task_id'])
+            self.assertEqual(len(results['ledger-repair'][1]['task_summary']['attempts']),2)
             self.assertEqual(results['blocked'][0]['security'][0]['action'],'block')
             self.assertEqual(results['blocked'][0]['outcome'],'Ungraded')
             self.assertIsNone(results['partial'][0]['totals']['input'])

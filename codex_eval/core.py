@@ -20,7 +20,7 @@ RETENTION = 30 * 86400
 IDENTIFIER = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 TOOLS = {"shell", "file", "browser", "mcp", "weather", "unknown"}
 REASONS = {"prompt_injection", "sensitive_data", "unapproved_origin", "inspection_error", "policy_mismatch"}
-SAMPLE_CASES = {'desktop', 'multi', 'subagents', 'repair', 'blocked', 'partial'}
+SAMPLE_CASES = {'desktop', 'multi', 'subagents', 'repair', 'ledger-repair', 'blocked', 'partial'}
 
 
 def identifier(value):
@@ -363,7 +363,7 @@ def analyze(record, events):
         u = node["usage"]
         node["own_tokens"] = u["input"] + u["output"] if u and u["input"] is not None and u["output"] is not None else None
         node["simulated_usd"] = None
-        if record['source'] == 'controlled-simulation' and u and u['fixture_profile'] == 'weather-v1' and all(u[k] is not None for k in ("input", "cached", "output")):
+        if record['source'] == 'controlled-simulation' and u and u['fixture_profile'] and all(u[k] is not None for k in ("input", "cached", "output")):
             # Test-only rates: $1/$0.25/$4 per million uncached/cached/output tokens.
             node["simulated_usd"] = str((Decimal(u["input"] - u["cached"]) + Decimal(u["cached"]) / 4 + Decimal(u["output"]) * 4) / 1000000)
     ranked = sorted(nodes.values(), key=lambda n: (n["own_tokens"] is not None, n["own_tokens"] or 0), reverse=True)

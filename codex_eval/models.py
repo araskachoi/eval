@@ -23,7 +23,10 @@ def identity(event):
         provider = runtime['provider'] if valid else None
         harness = event['harness'] if valid else None
         model = event.get('model') if valid and source == runtime['model_source'] and isinstance(event.get('model'), str) and event['model'] in runtime['models'] else None
-    fixture = 'weather-v1' if event.get('fixture_profile') == 'weather-v1' or event.get('model') == 'sim-weather-v1' else None
+    fixture = event.get('fixture_profile')
+    fixture = fixture if fixture in ('weather-v1', 'acceptance-v1') else None
+    if event.get('model') == 'sim-weather-v1':
+        fixture = 'weather-v1'
     return dict(provider=provider, model=model, model_source=source if model else 'unknown',
                 harness=harness,
                 fixture_profile=fixture, adapter=adapter)

@@ -32,7 +32,8 @@ PROCESSES = {}
 def source_files(root):
     files = {}
     for folder, suffixes in (('codex_eval', {'.py', '.html', '.js', '.css'}),
-                             ('scripts', {'.py'}), ('integrations/codex/record', {'.md', '.yaml'})):
+                             ('scripts', {'.py'}), ('regression/benchmarks', {'.py', '.json', '.md'}),
+                             ('integrations/codex/record', {'.md', '.yaml'})):
         base = root / folder
         if base.is_symlink() or any(p.is_symlink() for p in base.parents):
             raise ValueError('Symlinked release source refused')
@@ -98,7 +99,7 @@ def write_json(path, value):
 def git_info(root):
     try:
         commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, timeout=5, check=True).stdout.strip()
-        dirty = subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'codex_eval', 'scripts', 'integrations', 'pyproject.toml'], cwd=root, capture_output=True, timeout=5).returncode != 0
+        dirty = subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'codex_eval', 'scripts', 'integrations', 'regression/benchmarks', 'pyproject.toml'], cwd=root, capture_output=True, timeout=5).returncode != 0
         return (commit if re.fullmatch('[0-9a-f]{40,64}', commit) else None), dirty
     except (OSError, subprocess.SubprocessError):
         return None, None

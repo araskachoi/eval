@@ -74,9 +74,11 @@ class SummaryTests(unittest.TestCase):
         root = next(n for n in self.report['executions'] if n['parent_id'] is None)
         self.assertEqual(labels[root['id']], 'Main agent')
         self.assertEqual(len(self.store.list()), 1)
-        repaired = scenario(self.store, 'repair')
+        repaired = scenario(self.store, 'ledger-repair')
         for index, report in enumerate(repaired, 1):
-            self.assertEqual(recording_details(report['recording'])['title'], f'Weather app · Timeout recovery · Recording {index}')
+            self.assertEqual(recording_details(report['recording'])['title'], f'Ledger CLI · Repair · Recording {index}')
+        legacy = repaired[1]['recording'] | {'sample_case': 'repair'}
+        self.assertEqual(recording_details(legacy)['title'], 'Weather app · Timeout recovery · Recording 2')
         self.assertEqual(len(repaired[1]['task_summary']['attempts']), 2)
         self.assertEqual(len(repaired[1]['executions']), 1)
 

@@ -1,0 +1,61 @@
+{
+  "grader": "ledger-cli-v1",
+  "max_turns": 3,
+  "repair_prompt": "Revise your last submission to address the failed checks. Return only the complete updated ledger.py.",
+  "checks": {
+    "legacy_show": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [],
+      "steps": [{"command": "show", "balances": {"checking": 800}}],
+      "final": [{"id": "old-1", "account": "checking", "amount_cents": 800}]
+    },
+    "append_and_total": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [{"id": "new-1", "account": "checking", "amount_cents": -125}, {"id": "new-2", "account": "savings", "amount_cents": 425}],
+      "steps": [{"command": "apply", "balances": {"checking": 675, "savings": 425}}, {"command": "show", "balances": {"checking": 675, "savings": 425}}],
+      "final": [{"id": "old-1", "account": "checking", "amount_cents": 800}, {"id": "new-1", "account": "checking", "amount_cents": -125}, {"id": "new-2", "account": "savings", "amount_cents": 425}]
+    },
+    "replay_across_invocations": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [{"id": "new-1", "account": "checking", "amount_cents": -125}],
+      "steps": [{"command": "apply", "balances": {"checking": 675}}, {"command": "apply", "balances": {"checking": 675}}],
+      "final": [{"id": "old-1", "account": "checking", "amount_cents": 800}, {"id": "new-1", "account": "checking", "amount_cents": -125}]
+    },
+    "identical_duplicate_in_batch": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [{"id": "old-1", "account": "checking", "amount_cents": 800}, {"id": "new-1", "account": "checking", "amount_cents": -125}, {"id": "new-2", "account": "savings", "amount_cents": 425}, {"id": "new-1", "account": "checking", "amount_cents": -125}],
+      "steps": [{"command": "apply", "balances": {"checking": 675, "savings": 425}}],
+      "final": [{"id": "old-1", "account": "checking", "amount_cents": 800}, {"id": "new-1", "account": "checking", "amount_cents": -125}, {"id": "new-2", "account": "savings", "amount_cents": 425}]
+    },
+    "conflict_with_ledger": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [{"id": "new-2", "account": "savings", "amount_cents": 425}, {"id": "old-1", "account": "checking", "amount_cents": 123}],
+      "steps": [{"command": "apply", "balances": null}],
+      "final": null
+    },
+    "conflict_within_batch": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [{"id": "new-1", "account": "checking", "amount_cents": -125}, {"id": "new-1", "account": "checking", "amount_cents": 90}],
+      "steps": [{"command": "apply", "balances": null}],
+      "final": null
+    },
+    "malformed_row_rollback": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [{"id": "new-1", "account": "checking", "amount_cents": -125}, {"id": "new-2", "account": "savings", "amount_cents": true}],
+      "steps": [{"command": "apply", "balances": null}],
+      "final": null
+    },
+    "malformed_json": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": "[",
+      "steps": [{"command": "apply", "balances": null}],
+      "final": null
+    },
+    "empty_batch": {
+      "ledger": [{"id": "old-1", "account": "checking", "amount_cents": 800}],
+      "batch": [],
+      "steps": [{"command": "apply", "balances": {"checking": 800}}],
+      "final": [{"id": "old-1", "account": "checking", "amount_cents": 800}]
+    }
+  }
+}

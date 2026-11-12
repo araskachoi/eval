@@ -9,8 +9,9 @@ from .models import model_summary
 CASES = {
     'desktop': ('Basic recording', 'A sample of a single recorded agent action. This does not test live desktop capture.'),
     'multi': ('Multiple agent actions', 'Two scripted agent actions in one recording. Separate actions do not create separate recordings.'),
-    'subagents': ('Main agent with two helpers', 'One recording contains a main agent and two simulated subagents. One helper has a failed weather lookup.'),
+    'subagents': ('Main agent with two helpers', 'One recording contains a main agent and two simulated subagents. One helper has a failed tool call.'),
     'repair': ('Weather app · Timeout recovery', 'Two recordings of the same sample task: the first fails the timeout check; the second passes it.'),
+    'ledger-repair': ('Ledger CLI · Repair', 'Two scripted recordings: the first fails its check; the second passes it.'),
     'blocked': ('Prompt blocked by MAGEN', 'A synthetic unsafe proposal is blocked before submission to a fake endpoint.'),
     'partial': ('Missing final usage', 'A simulated agent is still running when recording stops. Its final token usage is missing.'),
 }

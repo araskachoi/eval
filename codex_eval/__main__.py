@@ -69,8 +69,36 @@ def main():
     commands.add_parser('purge')
     commands.add_parser('cleanup')
     commands.add_parser('acceptance')
+    regression = commands.add_parser('regression', help='Grade and compare explicit benchmark submissions')
+    regression_commands = regression.add_subparsers(dest='operation', required=True)
+    grade = regression_commands.add_parser('grade')
+    grade.add_argument('--run', type=Path, required=True)
+    grade.add_argument('--output', type=Path, required=True)
+    compare = regression_commands.add_parser('compare')
+    compare.add_argument('baseline', type=Path)
+    compare.add_argument('candidate', type=Path)
+    protocol = regression_commands.add_parser('protocol', help='Show the exact initial prompt and turn budget')
+    protocol.add_argument('--benchmark', required=True)
+    protocol.add_argument('--protocol')
     args = parser.parse_args()
     os.umask(0o077)
+    if args.command == 'regression':
+        from . import regression
+        try:
+            if args.operation == 'grade':
+                result = regression.grade(args.run, args.output)
+            elif args.operation == 'compare':
+                result = regression.compare(args.baseline, args.candidate)
+            else:
+                result = regression.protocol_info(args.benchmark, args.protocol)
+        except (KeyError, TypeError, AttributeError, RecursionError, OSError) as exc:
+            parser.exit(2, f'Regression input or output failed ({type(exc).__name__}).\n')
+        except ValueError as exc:
+            parser.exit(2, f'Regression refused: {exc}\n')
+        print(json.dumps(result, indent=2))
+        if result.get('status') == 'error':
+            parser.exit(2, 'Grading stopped with an infrastructure error. Check the sandbox preflight.\n')
+        return
     thread = None
     try:
         if args.command == 'doctor':

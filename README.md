@@ -44,7 +44,7 @@ ready to serve as an automatic live usage meter for public users.
 | Harness portability | A custom skills directory changes discovery only. Another harness still needs a verified identity and metrics adapter; cross-harness capture is not implemented. |
 | Installation | Source-checkout workflow; installer/integration assets are not included in the Python wheel. Manual publishing saves releases and refreshes the global skill. Paths must remain stable. No save watcher or launch-at-login service is installed. |
 | Availability | Collector must be running, either in a foreground terminal or started by the publisher. Managed updates refuse active windows; other restarts/crashes interrupt them. Inline cards are snapshots, and renderer support varies. |
-| Evaluation | Weather cases, agent trees, and security checks are synthetic. They do not establish real-agent quality, live capture, MAGEN effectiveness, or a measured overhead budget. Paid/live model execution remains disabled. |
+| Evaluation | Acceptance recordings and security checks are synthetic. They do not establish real-agent quality, live capture, MAGEN effectiveness, or a measured overhead budget. Paid/live model execution remains disabled. |
 | Development tests | Tests require the dedicated VM and verified rootless containers. The launcher depends on separately provisioned local Podman/VM assets, so a fresh clone is not a turnkey test environment. |
 
 See [Interpretation and limits](#interpretation-and-limits), the
@@ -60,8 +60,10 @@ See [Interpretation and limits](#interpretation-and-limits), the
 - Strict normalized-event ingestion and a content-dropping CLI-event parser.
 - Provider-independent MAGEN gate using the existing detector implementation in
   isolated tests; Ollama is not required.
-- Six scripted weather acceptance walkthroughs, a fake Weather transport, and
-  a fail-closed rootless-container launcher in a dedicated Linux VM.
+- Six scripted acceptance walkthroughs and a fail-closed rootless-container
+  launcher in a dedicated Linux VM.
+- Opt-in [model regression](regression/README.md) with isolated ledger grading
+  and comparison of manually managed results.
 
 **This is an instrumented foundation, not verified live Codex desktop capture.**
 Record currently arms a window for explicitly correlated normalized events; it
@@ -176,7 +178,7 @@ Sample USD uses synthetic fixture rates; production pricing is unavailable.
 
 The panel calls measurement windows **recordings**. A recording can contain
 multiple prompts and subagents; recordings of the same task remain linked.
-The six reviewed sample cases have fixed, readable names. Repeated verification
+Reviewed sample cases have fixed, readable names. Repeated verification
 runs stay under “Earlier sample copies,” separate from live recordings. No
 prompt-derived titles are stored. Legacy samples without known provenance use
 “Sample recording”; real tasks without collected titles use a task number.

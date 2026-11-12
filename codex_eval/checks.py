@@ -1,6 +1,8 @@
 """Bounded, source-reviewed assessment definitions; never retain review content."""
 
 GRADERS = {
+    'acceptance-fixture-v1': dict(
+        checks={'exact_match'}, scope='acceptance-fixture', provenance='scripted-acceptance-fixture'),
     'weather-fixture-v1': dict(
         checks={'coordinates', 'display', 'timeout', 'units', 'rate_limit', 'credential_output'},
         scope='weather-fixture', provenance='scripted-weather-fixture'),

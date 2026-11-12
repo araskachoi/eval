@@ -55,8 +55,9 @@ Cached input is a subset of input; reasoning is a subset of output.
   known models. If a model changes inside a single cumulative bucket without
   call boundaries, preserve its latest numeric usage but suppress attribution
   and warn. Rates are not inferred: real USD remains unavailable.
-- fixture_profile=weather-v1 selects synthetic fixture pricing independently
-  of model identity and is allowed only in controlled-simulation recordings.
+- fixture_profile=acceptance-v1 selects synthetic fixture pricing for current
+  acceptance samples. Both it and historical weather-v1 are independent of model
+  identity and allowed only in controlled-simulation recordings.
   Legacy sim-weather-v1 events are read as fixture_profile=weather-v1 with
   model=null. Raw historical events are not rewritten; normalized replays remain
   idempotent. Newly generated fixture events never put a simulator name in model.
@@ -112,7 +113,8 @@ correctness; production USD remains unavailable.
 
 `checks.py:GRADERS` binds each versioned grader to a finite check set, scope, and
 provenance. Extend it in source review with normalization and report tests.
-`weather-fixture-v1` retains its existing six check IDs and derives scope
+Current simulations use `acceptance-fixture-v1` with `exact_match`.
+Historical `weather-fixture-v1` retains its six check IDs and derives scope
 `weather-fixture`, provenance `scripted-weather-fixture`. `reference-match-v1`
 accepts only `exact_match`, scope `supplied-reference`, provenance
 `trusted-emitter-comparison`. Its emitter compares an output with an explicit
