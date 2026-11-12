@@ -17,8 +17,13 @@ or another directory.
    ```sh
    python3 -m codex_eval regression protocol --benchmark ledger-v2 --protocol guided
    ```
-2. In a directory for the turn, save the full submitted file as `ledger.py` and
-   save the following metadata as `turn.json`. Measure elapsed time from prompt
+   For the filesystem task, use `--benchmark filesystem-v1 --protocol independent`.
+   Its prompt contains only a dummy inventory and asks for a standalone
+   `organize.py`.
+
+2. In a directory for the turn, save the full submitted file as `ledger.py` for
+   ledger or `organize.py` for filesystem. Save the following metadata as
+   `turn.json`, using the chosen benchmark and protocol. Measure elapsed time from prompt
    submission to submission handoff. Use milliseconds and omit any metric the
    harness could not measure.
 
@@ -70,6 +75,22 @@ or another directory.
 python3 -m codex_eval regression compare regression/results/baseline regression/results/candidate
 ```
 
+For an A/A check, give the local filesystem runner a directory of saved grades
+for one model and a new results directory. It repeats the same trial IDs and
+inference settings, verifies the benchmark, model revision, Ollama version,
+and sandbox against the saved grades, and writes new grades, receipts, and a
+comparison. Start the dedicated VM before running it.
+
+```sh
+python3 -B scripts/repeat_filesystem.py \
+  --baseline regression/results/2026-11-11-filesystem-v1-ollama/gemma4 \
+  --output regression/results/filesystem-gemma-repeat
+```
+
+The runner sends only the benchmark prompt and its turn history to loopback
+Ollama. It saves submitted scripts temporarily as data for the isolated grader
+and retains the numeric receipts and grade results.
+
 Each directory should contain one result JSON per trial and turn for one model.
 The report pairs matching trial IDs and shows unmatched trials separately.
 Pass rates give the number passed, the number with a known grade, and the total
@@ -103,3 +124,10 @@ fixtures, observes the CLI and resulting files, and compares those observations
 against expected outcomes outside the container. Future tool-enabled agent runs
 need their own verified fixture-only workspace plus grading of intended changes
 and protected files.
+
+The filesystem grader accepts no host directory input. It builds each tree from
+literal dummy strings in the reviewed benchmark definition. It restricts file
+writes and removals to the disposable fixture with Landlock and blocks child
+process creation. The grader checks the exact tree, file contents and modes
+after each of two runs. It discards submission output and fails closed when the
+required sandbox controls are unavailable.
