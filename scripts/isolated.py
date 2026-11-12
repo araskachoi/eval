@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import platform
 import re
 import selectors
 from pathlib import Path
@@ -25,6 +26,7 @@ if ROOT.parent.name == 'releases' and ROOT.parent.parent.name == 'app' and ROOT.
 BIN = RUNTIME / 'podman-package/podman.pkg/Payload/podman/bin'
 PODMAN = BIN / 'podman'
 IMAGE = 'docker.io/library/python@sha256:29434a59c93070e470f84663e4289026e04644ea44b5220ef7e07d653318ca1f'
+PODMAN_VERSION = '6.1.4'
 FILE_LIMIT = 1024 * 1024
 BUNDLE_LIMIT = 4 * FILE_LIMIT
 
@@ -46,11 +48,52 @@ def command(*args, **kwargs):
     return result.stdout
 
 
+def machine_config_path():
+    return RUNTIME / 'config/containers/podman/machine/applehv' / (MACHINE + '.json')
+
+
+def check_machine_config():
+    config = json.loads(machine_config_path().read_text())
+    if config.get('Mounts') != [] or config.get('HostUser', {}).get('Rootful') is not False:
+        raise RuntimeError('VM must be rootless and have no shared host mounts')
+    if config.get('Resources', {}).get('USBs') != []:
+        raise RuntimeError('Guest device passthrough is prohibited')
+
+
+def provision(image, expected_sha256):
+    if platform.system() != 'Darwin' or platform.machine() != 'arm64':
+        raise ValueError('Provisioning supports Apple Silicon macOS')
+    if not re.fullmatch('[0-9a-f]{64}', expected_sha256 or '') or image is None:
+        raise ValueError('Supply a reviewed local machine image and its SHA-256')
+    if os.path.lexists(machine_config_path()):
+        raise ValueError('The dedicated VM already has a configuration')
+    if not image.is_file() or image.is_symlink():
+        raise ValueError('Expected a regular local machine image')
+    with image.open('rb') as source:
+        if hashlib.file_digest(source, 'sha256').hexdigest() != expected_sha256:
+            raise ValueError('Machine image checksum mismatch')
+    if command('--version').decode().strip() != f'podman version {PODMAN_VERSION}':
+        raise ValueError(f'Provisioning requires Podman {PODMAN_VERSION}')
+    config = RUNTIME / 'config/containers/containers.conf'
+    config.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    policy = '[machine]\nvolumes = []\n'
+    if os.path.lexists(config):
+        if config.is_symlink() or config.read_text() != policy:
+            raise ValueError('Existing Podman configuration differs from the isolated policy')
+    else:
+        with config.open('x') as stream:
+            stream.write(policy)
+    command('machine', 'init', '--provider', 'applehv', '--rootful=false', '--cpus', '2',
+            '--memory', '2048', '--image', str(image.resolve()), MACHINE, timeout=180)
+    check_machine_config()
+    return {'machine': MACHINE, 'machine_image_sha256': expected_sha256,
+            'podman_version': PODMAN_VERSION, 'rootless': True, 'host_mounts': 0}
+
+
 def verify_machine():
+    check_machine_config()
     machine = json.loads(command('machine','inspect',MACHINE))[0]
-    config_path = RUNTIME / 'config/containers/podman/machine/applehv' / (MACHINE+'.json')
-    config = json.loads(config_path.read_text())
-    if config.get('Mounts') != [] or config.get('HostUser',{}).get('Rootful') is not False or machine.get('Rootful') is not False or machine.get('State') != 'running':
+    if machine.get('Rootful') is not False or machine.get('State') != 'running':
         raise RuntimeError('VM must be running, rootless, and have no shared host mounts')
     info = json.loads(command('--connection',MACHINE,'info','--format','json'))
     if info['host']['security'].get('rootless') is not True:
@@ -64,8 +107,6 @@ def verify_machine():
         if mount.get('fstype') in {'virtiofs','9p'}:
             raise RuntimeError('Effective guest host-sharing mounts found')
         pending.extend(mount.get('children',[]))
-    if config.get('Resources',{}).get('USBs') != []:
-        raise RuntimeError('Guest device passthrough is prohibited')
     return {'machine':MACHINE,'rootless':True,'host_mounts':0}
 
 
@@ -303,12 +344,17 @@ def export_fixtures(bundles):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['preflight','test','hold','stage'])
+    parser.add_argument('operation',choices=['init','preflight','test','hold','stage'])
     parser.add_argument('--magen',type=Path)
+    parser.add_argument('--machine-image', type=Path)
+    parser.add_argument('--machine-sha256')
     parser.add_argument('--no-export',action='store_true',help='Validate without adding sample recordings to the host app')
     args=parser.parse_args()
     try:
-        if args.operation=='hold':
+        if args.operation=='init':
+            print(json.dumps(provision(args.machine_image, args.machine_sha256), indent=2))
+        elif args.operation=='hold':
+            check_machine_config()
             print(command('machine','start',MACHINE,timeout=60).decode(),flush=True)
             try:
                 while True:

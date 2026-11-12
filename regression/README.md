@@ -4,7 +4,7 @@ Regression is an explicit CLI workflow from the source checkout or a managed
 release. It uses the dedicated `eval-sandbox` VM for grading and works with
 model submissions collected by an external harness. Comparisons read saved JSON
 files locally. You manage benchmark results manually in `regression/results/`
-or another directory.
+or another directory. See [fresh setup and release checks](../docs/regression-setup.md).
 
 ## Grade a trial
 
