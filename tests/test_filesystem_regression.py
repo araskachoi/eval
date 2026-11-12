@@ -40,7 +40,7 @@ class FilesystemRegressionTests(unittest.TestCase):
 
         benchmark, _ = regression.benchmark_definition('filesystem-v1', 'independent')
         case = benchmark['checks']['mixed_types_and_protected_files']
-        reference = (Path(__file__).parent / 'fixtures' / 'organize_reference.py').read_bytes()
+        reference = (regression.ROOT / 'filesystem-v1' / 'reference.py').read_bytes()
         probe = b'''
     import os
     import subprocess

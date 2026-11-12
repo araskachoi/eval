@@ -160,3 +160,20 @@ with shell execution, web search, apps, plugins, hooks and subagents disabled.
 The grader still runs in the existing network-disabled VM/container. The
 runner records requested Codex model identity, CLI version and reported usage.
 Hosted revision and served-model identity are unresolved in this CLI mode.
+
+## Qualify the task checks
+
+Run the reviewed reference and deliberate failure probes inside the grader.
+
+```sh
+python3 -m codex_eval regression qualify --benchmark ledger-v2 --protocol independent
+python3 -m codex_eval regression qualify --benchmark filesystem-v1 --protocol independent
+```
+
+Qualification checks for false credit on blanket rejection, boolean validation,
+collision overwrites, and protected-file deletion. Each probe must produce the
+expected result for every check. The command records submission and benchmark
+digests and the effective grader profile. Use separate local model pilots to
+observe completion and repair behavior under a fixed protocol. The synthetic
+probes establish grader behavior and the model pilots characterize the tested
+models under their saved settings.
