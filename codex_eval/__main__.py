@@ -40,7 +40,7 @@ def control(state, request):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Local metrics and Finish reports; no model calls')
+    parser = argparse.ArgumentParser(description='Local metrics, Finish reports, and explicit regression benchmarks')
     build = application()
     parser.add_argument('--version', action='version', version=f"Local Eval {build['version']} ({build['release_id']})")
     parser.add_argument('--state', type=Path, default=Path.home() / 'Library/Application Support/codex-eval')
@@ -116,7 +116,7 @@ def main():
         if args.command == 'doctor':
             executable = shutil.which('codex')
             version = subprocess.run([executable,'--version'],capture_output=True,text=True,timeout=5).stdout.strip() if executable else 'not found'
-            print(json.dumps({'codex':version,'desktop_capture':'unverified — no telemetry configured or private history read', 'live_benchmarks':'disabled pending isolated authentication design','resources':'unavailable; no attribution is fabricated','test_command':'python3 scripts/isolated.py test --magen /absolute/path/to/magen','dependencies':'standard library only'},indent=2))
+            print(json.dumps({'codex':version,'desktop_capture':'unverified — no telemetry configured or private history read', 'live_benchmarks':'explicit regression run with Ollama or Codex CLI','resources':'unavailable; no attribution is fabricated','test_command':'python3 scripts/isolated.py test --magen /absolute/path/to/magen','dependencies':'standard library only'},indent=2))
             return
         if args.command == 'acceptance':
             raise ValueError('Acceptance fixtures must run inside isolation: python3 scripts/isolated.py test')

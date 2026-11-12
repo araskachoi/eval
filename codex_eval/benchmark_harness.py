@@ -59,8 +59,9 @@ def output_limit():
 def codex_process(executable, work, args, prompt=None):
     home = work / 'codex-home'
     home.mkdir(mode=0o700, exist_ok=True)
-    env = {'HOME': str(work), 'CODEX_HOME': str(home), 'PATH': os.defpath,
-           'LANG': 'C.UTF-8', 'CODEX_API_KEY': os.environ['CODEX_API_KEY']}
+    env = {'HOME': str(work), 'CODEX_HOME': str(home), 'PATH': os.defpath, 'LANG': 'C.UTF-8'}
+    if prompt is not None:
+        env['CODEX_API_KEY'] = os.environ['CODEX_API_KEY']
     with tempfile.TemporaryFile() as output:
         result = subprocess.run([executable, *args], cwd=work, env=env,
                                 input=prompt or b'', stdout=output, stderr=subprocess.DEVNULL,

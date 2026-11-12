@@ -37,8 +37,8 @@ def baseline_rows(path):
     return rows
 
 
-def publish_grades(completed, grades):
-    for path in sorted(completed.glob('*/*.json')):
+def publish_grades(trial, grades):
+    for path in sorted(trial.glob('*.json')):
         target = grades / path.name
         record = read_json(path)
         if os.path.lexists(target):
@@ -124,9 +124,13 @@ def run(spec_path, output, baseline=None, resume=False):
             regression.write_result(metadata, record)
         attempts, completed, grades = (output / name for name in ('attempts', 'completed', 'grades'))
         for directory in (attempts, completed, grades):
+            if directory.is_symlink():
+                raise ValueError('Run directories must not be symlinks')
             directory.mkdir(exist_ok=True, mode=0o700)
         for trial in trials:
             destination = completed / trial
+            if destination.is_symlink():
+                raise ValueError('Completed trial must not be a symlink')
             if not destination.is_dir():
                 print(f'Running {trial}', file=sys.stderr, flush=True)
                 attempt = Path(tempfile.mkdtemp(prefix=f'{trial}-', dir=attempts))
@@ -134,9 +138,11 @@ def run(spec_path, output, baseline=None, resume=False):
                 if harness == 'local-ollama-text-v1' and ollama_model(model['id']) != model:
                     raise ValueError('Ollama model revision changed during the trial')
                 attempt.rename(destination)
-            publish_grades(completed, grades)
+            publish_grades(destination, grades)
         results = regression.load_trials(grades)
         summary = {trial: regression.trial_summary(rows) for trial, rows in results.items()}
+        if sorted(summary) != trials or any(row['final'] not in ('passed', 'failed') for row in summary.values()):
+            raise ValueError('Completed grades do not match the planned trials')
         report = {'benchmark': protocol['benchmark'], 'model': model, 'trials': summary,
                   'first_pass': regression.counts(summary, 'first'), 'final_pass': regression.counts(summary, 'final')}
         if baseline is not None:
@@ -145,7 +151,7 @@ def run(spec_path, output, baseline=None, resume=False):
             report['comparison'] = regression.compare(baseline, grades)
         summary_path = output / 'summary.json'
         if os.path.lexists(summary_path):
-            if read_json(summary_path) != report:
+            if read_json(summary_path, 2 * 1024 * 1024) != report:
                 raise ValueError('Saved summary differs from completed grades')
         else:
             regression.write_result(summary_path, report)

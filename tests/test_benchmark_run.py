@@ -51,3 +51,8 @@ class BenchmarkRunTests(unittest.TestCase):
                 self.assertEqual((output / 'grades' / 'trial-01-turn-1.json').read_bytes(), first)
                 self.assertEqual(benchmark_run.run(spec, output, resume=True), result)
                 self.assertEqual(len(calls), 3)
+                (output / 'grades').rename(root / 'saved-grades')
+                (output / 'grades').symlink_to(root / 'saved-grades', target_is_directory=True)
+                with self.assertRaisesRegex(ValueError, 'symlinks'):
+                    benchmark_run.run(spec, output, resume=True)
+                self.assertEqual(len(calls), 3)
