@@ -1,0 +1,49 @@
+{
+  "grader": "filesystem-organize-v1",
+  "max_turns": 3,
+  "protocols": {"independent": {}},
+  "repair_prompt": "Revise your submission to address the failed checks. Return only the complete organize.py.",
+  "checks": {
+    "mixed_types_and_protected_files": {
+      "files": {
+        "inbox/notes.TXT": "dummy notes\n",
+        "inbox/picture.jpg": "dummy picture\n",
+        "inbox/table.csv": "dummy table\n",
+        "inbox/raw.bin": "dummy unknown\n",
+        "inbox/archive/old.txt": "dummy nested notes\n",
+        "protected/keep.txt": "dummy protected\n",
+        "outside.txt": "dummy unrelated root file\n"
+      },
+      "moves": {
+        "inbox/notes.TXT": "sorted/documents/notes.TXT",
+        "inbox/picture.jpg": "sorted/images/picture.jpg",
+        "inbox/table.csv": "sorted/data/table.csv"
+      }
+    },
+    "collisions_keep_every_file": {
+      "files": {
+        "inbox/report.txt": "dummy new report\n",
+        "inbox/report-1.txt": "dummy new numbered report\n",
+        "inbox/a.PNG": "dummy new picture\n",
+        "sorted/documents/report.txt": "dummy existing report\n",
+        "sorted/documents/report-1.txt": "dummy existing numbered report\n",
+        "sorted/images/a.PNG": "dummy existing picture\n",
+        "protected/keep.csv": "dummy protected\n"
+      },
+      "moves": {
+        "inbox/a.PNG": "sorted/images/a-1.PNG",
+        "inbox/report-1.txt": "sorted/documents/report-1-1.txt",
+        "inbox/report.txt": "sorted/documents/report-2.txt"
+      }
+    },
+    "unrecognized_and_nested_unchanged": {
+      "files": {
+        "inbox/picture.jpeg": "dummy unrecognized extension\n",
+        "inbox/README": "dummy extensionless\n",
+        "inbox/nested/data.csv": "dummy nested table\n",
+        "protected/keys.txt": "dummy placeholder only\n"
+      },
+      "moves": {}
+    }
+  }
+}

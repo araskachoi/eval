@@ -7,6 +7,7 @@ import re
 import stat
 import tempfile
 
+from .filesystem_grader import grade_filesystem
 from .regression_grader import digest, encode, grade_ledger
 
 ROOT = Path(__file__).resolve().parents[1] / 'regression' / 'benchmarks'
@@ -66,11 +67,14 @@ def benchmark_definition(benchmark_id, protocol):
         raise ValueError('Unknown benchmark')
     benchmark_path = ROOT / benchmark_id
     assets = {name: read_file(benchmark_path / name, 65536)
-              for name in ('benchmark.json', 'prompt.md', 'ledger.py')}
+              for name in ('benchmark.json', 'prompt.md')}
     benchmark = json.loads(assets['benchmark.json'])
+    initial_prompt = assets['prompt.md'].decode()
+    if benchmark['grader'] == 'ledger-cli-v1':
+        assets['ledger.py'] = read_file(benchmark_path / 'ledger.py', 65536)
+        initial_prompt = (initial_prompt.rstrip() + '\n\nOriginal ledger.py:\n\n'
+                          + '```python\n' + assets['ledger.py'].decode().rstrip() + '\n```\n')
     identity = {key: digest(data) for key, data in assets.items()}
-    initial_prompt = (assets['prompt.md'].decode().rstrip() + '\n\nOriginal ledger.py:\n\n'
-                      + '```python\n' + assets['ledger.py'].decode().rstrip() + '\n```\n')
     protocols = benchmark.get('protocols')
     if protocols is not None:
         if protocol not in protocols:
@@ -103,14 +107,17 @@ def grade(run_path, output):
     result = trial_metadata(turn)
     protocol = turn.get('protocol')
     benchmark, info = benchmark_definition(turn['benchmark'], protocol)
-    if (benchmark['grader'] != 'ledger-cli-v1' or type(benchmark['max_turns']) is not int
+    graders = {'ledger-cli-v1': ('ledger.py', grade_ledger),
+               'filesystem-organize-v1': ('organize.py', grade_filesystem)}
+    if (benchmark['grader'] not in graders or type(benchmark['max_turns']) is not int
             or not result['turn'] <= benchmark['max_turns'] <= MAX_TURNS or not benchmark['checks']):
         raise ValueError('Invalid benchmark grader, checks, or turn limit')
-    submission = read_file(run_path.parent / 'ledger.py', 65536)
+    filename, grader = graders[benchmark['grader']]
+    submission = read_file(run_path.parent / filename, 65536)
     if not submission:
         raise ValueError('Empty submission')
     encode(result)  # Reject nonfinite metadata before running any code.
-    checks, profile, grading_ms = grade_ledger(benchmark['checks'], submission)
+    checks, profile, grading_ms = grader(benchmark['checks'], submission)
     result.update(benchmark=turn['benchmark'], max_turns=benchmark['max_turns'],
                   benchmark_digest=info['benchmark_digest'],
                   submission_digest=digest(submission), grading_profile=profile,

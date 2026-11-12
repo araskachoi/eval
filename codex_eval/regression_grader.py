@@ -1,4 +1,4 @@
-"""Run one ledger check per verified container. Expected results stay in the launcher."""
+"""Run each check in a verified container. Expected results stay in the launcher."""
 from hashlib import sha256
 import json
 import subprocess
@@ -114,13 +114,13 @@ def apply_controls(checks, outcomes):
             outcomes[name] = outcomes[control]
 
 
-def grade_ledger(checks, submission):
+def grade_in_sandbox(checks, submission, driver, prepare, evaluate):
     from scripts import isolated
 
     outcomes = dict.fromkeys(checks, 'error')
     start = time.monotonic()
     profile = None
-    bootstrap = isolated.GUEST_CHECKS + DRIVER
+    bootstrap = isolated.GUEST_CHECKS + driver
     try:
         isolated.verify_machine()
         image = isolated.staged_image()
@@ -128,12 +128,17 @@ def grade_ledger(checks, submission):
                    'cpu': 1, 'ram_mib': 512, 'processes': 64,
                    'work_mib': 64, 'tmp_mib': 32, 'step_timeout_ms': 3000}
         for name, case in checks.items():
-            files, payload = payload_for(case, submission)
+            expected, payload = prepare(case, submission)
             with isolated.container(image, bootstrap) as container:
                 result = json.loads(isolated.workload(container, payload))
-            outcomes[name] = 'passed' if passed(case, files, result) else 'failed'
+            outcomes[name] = 'passed' if evaluate(case, expected, result) else 'failed'
     except (RuntimeError, OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
         # Retain completed checks. A stopped sandbox never yields an eligible pass.
         pass
-    apply_controls(checks, outcomes)
     return outcomes, profile, round((time.monotonic() - start) * 1000)
+
+
+def grade_ledger(checks, submission):
+    outcomes, profile, elapsed = grade_in_sandbox(checks, submission, DRIVER, payload_for, passed)
+    apply_controls(checks, outcomes)
+    return outcomes, profile, elapsed
