@@ -106,6 +106,13 @@ class Service:
                 raise ValueError('Unknown action')
 
 
+class LoopbackHTTPServer(HTTPServer):
+    def server_bind(self):
+        # The collector binds to a numeric loopback address and needs no DNS.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address
+
+
 def serve(state, port=8765):
     socket_path = state / 'control.sock'
     if os.path.lexists(socket_path):
@@ -214,7 +221,7 @@ def serve(state, port=8765):
                 response = {'error':'invalid_request_or_state'}
             self.wfile.write(json.dumps(response).encode() + b'\n')
 
-    with HTTPServer(('127.0.0.1',port), Handler) as http:
+    with LoopbackHTTPServer(('127.0.0.1',port), Handler) as http:
         authority = f'127.0.0.1:{http.server_port}'
         origin = f'http://{authority}'
         service.stop = http.shutdown

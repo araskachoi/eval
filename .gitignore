@@ -58,6 +58,7 @@ coverage.xml
 
 # Machine-specific editor and agent settings
 /.agents/
+/AGENTS.md
 /.codex/
 .idea/
 .vscode/

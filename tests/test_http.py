@@ -1,6 +1,7 @@
 import http.client
 import json
 from pathlib import Path
+import signal
 import socket
 import subprocess
 import sys
@@ -16,21 +17,42 @@ class HttpTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp=tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
         cls.state=Path(cls.tmp.name)/'state'
         with socket.socket() as probe:
             probe.bind(('127.0.0.1',0))
             cls.port=probe.getsockname()[1]
-        cls.process=subprocess.Popen([sys.executable,'-m','codex_eval','--state',str(cls.state),'collector','start','--port',str(cls.port)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        # The collector must start even when host name resolution is unavailable.
+        start = """
+import runpy
+from unittest.mock import patch
+
+with patch('socket.getfqdn', side_effect=AssertionError('Unexpected hostname lookup')):
+    runpy.run_module('codex_eval', run_name='__main__', alter_sys=True)
+"""
+        cls.process = subprocess.Popen(
+            [sys.executable, '-c', start, '--state', str(cls.state),
+             'collector', 'start', '--port', str(cls.port)],
+            stdout=subprocess.DEVNULL,
+        )
+        cls.addClassCleanup(cls.stop_collector)
         for _ in range(100):
-            if (cls.state/'control.sock').exists(): break
+            if (cls.state/'control.sock').exists(): return
             if cls.process.poll() is not None: raise RuntimeError('Collector exited during startup')
             time.sleep(.02)
+        raise RuntimeError('Collector did not create its control socket during startup')
 
     @classmethod
-    def tearDownClass(cls):
-        cls.process.send_signal(2)
-        cls.process.wait(timeout=5)
-        cls.tmp.cleanup()
+    def stop_collector(cls):
+        if cls.process.poll() is not None:
+            return
+        cls.process.send_signal(signal.SIGINT)
+        try:
+            cls.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            cls.process.kill()
+            cls.process.wait(timeout=5)
+            raise
 
     def request(self,path,body,**headers):
         connection=http.client.HTTPConnection('127.0.0.1',self.port,timeout=3)

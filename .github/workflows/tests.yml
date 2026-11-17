@@ -1,0 +1,34 @@
+name: Host tests
+
+on:
+  push:
+    paths: &test-paths
+      - '.github/workflows/tests.yml'
+      - 'codex_eval/**'
+      - 'integrations/**'
+      - 'pyproject.toml'
+      - 'regression/benchmarks/**'
+      - 'scripts/**'
+      - 'tests/**'
+  pull_request:
+    paths: *test-paths
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Run host tests
+        env:
+          PYTHONPATH: tests
+        run: |
+          export TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+          python -B -m unittest test_cli_events test_http test_models test_record test_summary
