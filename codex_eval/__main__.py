@@ -100,6 +100,7 @@ def main():
     mcp = regression_commands.add_parser('mcp', help='Run the ElevenLabs fixture benchmark')
     mcp.add_argument('preset', choices=['pilot', 'sweep', 'matrix'])
     mcp.add_argument('--output', type=Path)
+    mcp.add_argument('--trials', type=int, help='Trials per model and condition')
     mcp.add_argument('--benchmark', choices=['elevenlabs-mcp-v1', 'elevenlabs-mcp-v2'],
                      default='elevenlabs-mcp-v1')
     mcp_report = regression_commands.add_parser('mcp-report', help='Summarize saved ElevenLabs results')
@@ -119,7 +120,8 @@ def main():
             elif args.operation in ('mcp', 'mcp-report', 'mcp-play'):
                 from . import elevenlabs_benchmark
                 if args.operation == 'mcp':
-                    result = elevenlabs_benchmark.run(args.preset, args.output, benchmark=args.benchmark)
+                    result = elevenlabs_benchmark.run(args.preset, args.output, benchmark=args.benchmark,
+                                                     trials=args.trials)
                 elif args.operation == 'mcp-report':
                     result = elevenlabs_benchmark.report(args.output, args.reviews)
                 else:

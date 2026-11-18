@@ -290,10 +290,14 @@ def report(output, review_path=None):
             'models': summarize(rows, manifest['model_ids'], manifest['conditions'], reviews)}
 
 
-def run(preset, output, *, benchmark=BENCHMARK):
+def run(preset, output, *, benchmark=BENCHMARK, trials=None):
     definition, protocol = regression.benchmark_definition(benchmark, None)
     models = definition['pilot_models' if preset == 'pilot' else 'matrix_models']
     count = definition['matrix_trials_per_condition' if preset == 'matrix' else 'pilot_trials_per_condition']
+    if trials is not None:
+        if type(trials) is not int or not 1 <= trials <= 1000:
+            raise ValueError('Trials per condition must be an integer from 1 to 1000')
+        count = trials
     conditions = definition['conditions']
     seed = definition['design_seed']
     rng = Random(seed)
