@@ -16,6 +16,7 @@ DISABLED = ('apps', 'hooks', 'multi_agent', 'multi_agent_v2', 'plugins',
 CONFIG = [arg for feature in DISABLED for arg in ('--disable', feature)]
 CONFIG += ['-c', 'web_search="disabled"', '-c', 'shell_environment_policy.inherit="none"']
 OUTPUT_LIMIT = 2 * 1024 * 1024
+KEYCHAIN_SERVICE = 'eval-codex-api-key'
 
 
 def ollama_request(path, payload=None):
@@ -43,29 +44,40 @@ def ollama_model(model):
             'evidence': 'response.model and local Ollama tag digest'}
 
 
-def ollama_turn(model, messages, settings):
+def ollama_chat(model, messages, settings, *, tools=None):
     options = {key: settings[key] for key in ('temperature', 'num_ctx', 'num_predict')}
-    reply = ollama_request('/api/chat', {'model': model['id'], 'messages': messages, 'stream': False,
-                           'keep_alive': settings['keep_alive'], 'think': settings['think'], 'options': options})
+    request = {'model': model['id'], 'messages': messages, 'stream': False,
+               'keep_alive': settings['keep_alive'], 'think': settings['think'], 'options': options}
+    if tools is not None:
+        request['tools'] = tools
+    reply = ollama_request('/api/chat', request)
     if reply.get('model') != model['id'] or reply.get('done') is not True:
         raise ValueError('Unexpected Ollama model or incomplete response')
-    return reply['message']['content'], {key: reply[field] for field, key in COUNTERS.items() if field in reply}
+    return reply['message'], {key: reply[field] for field, key in COUNTERS.items() if field in reply}
+
+
+def ollama_turn(model, messages, settings):
+    message, metrics = ollama_chat(model, messages, settings)
+    return message['content'], metrics
 
 
 def output_limit():
     resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_LIMIT, OUTPUT_LIMIT))
 
 
-def codex_process(executable, work, args, prompt=None):
-    home = work / 'codex-home'
-    home.mkdir(mode=0o700, exist_ok=True)
+def codex_process(executable, work, args, prompt=None, *, api_key=None, home=None, capture_stderr=False):
+    if home is None:
+        home = work / 'codex-home'
+        home.mkdir(mode=0o700, exist_ok=True)
     env = {'HOME': str(work), 'CODEX_HOME': str(home), 'PATH': os.defpath, 'LANG': 'C.UTF-8'}
-    if prompt is not None:
-        env['CODEX_API_KEY'] = os.environ['CODEX_API_KEY']
+    if api_key is not None:
+        env['CODEX_API_KEY'] = api_key
     with tempfile.TemporaryFile() as output:
         result = subprocess.run([executable, *args], cwd=work, env=env,
-                                input=prompt or b'', stdout=output, stderr=subprocess.DEVNULL,
-                                timeout=150, preexec_fn=output_limit)
+                                input=prompt or b'', stdout=output,
+                                stderr=subprocess.STDOUT if capture_stderr else subprocess.DEVNULL,
+                                # The signed-in CLI also opens existing state files.
+                                timeout=150, preexec_fn=output_limit if api_key is not None or 'exec' not in args else None)
         output.seek(0)
         data = output.read(OUTPUT_LIMIT + 1)
     if result.returncode or len(data) >= OUTPUT_LIMIT:
@@ -74,8 +86,6 @@ def codex_process(executable, work, args, prompt=None):
 
 
 def codex_preflight(executable):
-    if not os.environ.get('CODEX_API_KEY'):
-        raise ValueError('Supply CODEX_API_KEY to the trusted runner for Codex inference')
     with tempfile.TemporaryDirectory(prefix='eval-codex-config-') as directory:
         work = Path(directory).resolve()
         version = codex_process(executable, work, ['--version']).strip()
@@ -110,7 +120,7 @@ def codex_receipt(stream):
     return submission, {key: usage[key] for key in ('input_tokens', 'output_tokens', 'cached_input_tokens') if key in usage}
 
 
-def codex_turn(executable, model, messages, settings):
+def codex_turn(executable, model, messages, settings, *, api_key, home):
     # Each invocation is ephemeral. The runner carries only synthetic turn history.
     if len(messages) == 1:
         prompt = messages[0]['content']
@@ -119,15 +129,42 @@ def codex_turn(executable, model, messages, settings):
             f"{message['role']}:\n{message['content']}" for message in messages
         )
     with tempfile.TemporaryDirectory(prefix='eval-codex-turn-') as directory:
-        stream = codex_process(executable, Path(directory).resolve(), [
+        work = Path(directory).resolve()
+        stream = codex_process(executable, work, [
             *CONFIG, '-c', f'model_reasoning_effort={json.dumps(settings["reasoning_effort"])}',
+            '-c', f'log_dir={json.dumps(str(work / "logs"))}',
+            '-c', f'sqlite_home={json.dumps(str(work / "state"))}',
             '-a', 'never', 'exec', '--ignore-user-config', '--skip-git-repo-check',
             '--sandbox', 'read-only', '--ephemeral', '--json', '--model', model['id'], '-',
-        ], prompt.encode())
+        ], prompt.encode(), api_key=api_key, home=home)
     return codex_receipt(stream)
 
 
-def select_harness(spec):
+def codex_key(keychain):
+    if not keychain:
+        key = os.environ.get('CODEX_API_KEY')
+        if not key:
+            raise ValueError('No accessible ChatGPT CLI login. Supply CODEX_API_KEY or use --keychain')
+        return key
+    error = f'Could not read the {KEYCHAIN_SERVICE} item from macOS Keychain'
+    try:
+        result = subprocess.run(['/usr/bin/security', 'find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, timeout=30, check=True)
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 44:  # macOS security exit status for errSecItemNotFound.
+            raise ValueError(f'No visible macOS Keychain item has service {KEYCHAIN_SERVICE}. '
+                             'Check the service name in Keychain Access') from None
+        raise ValueError(error) from None
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        raise ValueError(error) from None
+    key = result.stdout.rstrip('\r\n')
+    if not key or '\n' in key or '\r' in key:
+        raise ValueError(error)
+    return key
+
+
+def select_harness(spec, *, keychain=False):
     harness, model = spec['harness'], spec['model']
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', model):
         raise ValueError('Select an explicit model ID')
@@ -149,11 +186,25 @@ def select_harness(spec):
     executable = shutil.which('codex')
     if executable is None:
         raise ValueError('Codex CLI is unavailable')
+    home = None
+    if not keychain:
+        existing_home = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex').expanduser().resolve()
+        with tempfile.TemporaryDirectory(prefix='eval-codex-login-') as directory:
+            try:
+                status = codex_process(executable, Path(directory).resolve(), ['login', 'status'],
+                                       home=existing_home, capture_stderr=True)
+            except (ValueError, OSError, subprocess.SubprocessError):
+                status = ''
+        if 'Logged in using ChatGPT' in status.splitlines():
+            home = existing_home
+    api_key = codex_key(keychain) if home is None else None
     version = codex_preflight(executable)
     identity = {'provider': 'openai', 'id': model, 'revision': None,
                 'evidence': 'requested via Codex CLI; served model unverified'}
     settings = {'codex_version': version, 'reasoning_effort': effort,
                 'outer_code_fence': 'unwrap one complete block'}
+    if home is not None:
+        settings['authentication'] = 'chatgpt'
     return identity, 'codex-cli-text-v1', settings, lambda identity, history, options: codex_turn(
-        executable, identity, history, options
+        executable, identity, history, options, api_key=api_key, home=home
     )

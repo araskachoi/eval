@@ -1,0 +1,426 @@
+{
+  "benchmark": "elevenlabs-mcp-v1",
+  "protocol_sha256": "09debaaa7b388972021c59d7cd551732e72076822138f3ebd24673846d8a6b9e",
+  "fixture_version": "welcome-pcm-v1",
+  "fixture_sha256": "49d57987bd88dced447383cc959feba8dae627ad5159579ac25bfa210c0321f4",
+  "harness": "local-ollama-mcp-v1",
+  "settings": {
+    "temperature": 0.2,
+    "num_ctx": 4096,
+    "num_predict": 512,
+    "keep_alive": "2m",
+    "think": false,
+    "ollama_version": "0.30.10"
+  },
+  "turn_budget": 4,
+  "trials_per_model_and_condition": 1,
+  "models": {
+    "gemma4:latest": "c6eb396dbd5992bbe3f5cdb947e8bbc0ee413d7c17e2beaae69f5d569cf982eb",
+    "qwen3.5:9b": "56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90",
+    "qwen2.5-coder:7b": "dae161e27b0e90dd1856c8bb3209201fd6736d8eb66298e75ed87571486f4364",
+    "qwen3.5:4b": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+    "llama3.2:3b": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72"
+  },
+  "trials": [
+    {
+      "trial_id": "trial-0001",
+      "model": "gemma4:latest",
+      "condition": "normal",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 29314,
+        "inference_calls": 2,
+        "input_tokens": 414,
+        "output_tokens": 119,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 1,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0002",
+      "model": "gemma4:latest",
+      "condition": "recovery-a",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 2972,
+        "inference_calls": 2,
+        "input_tokens": 339,
+        "output_tokens": 57,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0003",
+      "model": "gemma4:latest",
+      "condition": "permission-denied",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 2742,
+        "inference_calls": 2,
+        "input_tokens": 349,
+        "output_tokens": 50,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0004",
+      "model": "gemma4:latest",
+      "condition": "recovery-b",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 3466,
+        "inference_calls": 2,
+        "input_tokens": 352,
+        "output_tokens": 76,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0005",
+      "model": "qwen3.5:9b",
+      "condition": "recovery-b",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 29167,
+        "inference_calls": 2,
+        "input_tokens": 793,
+        "output_tokens": 89,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0006",
+      "model": "qwen3.5:9b",
+      "condition": "recovery-a",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 5491,
+        "inference_calls": 2,
+        "input_tokens": 780,
+        "output_tokens": 92,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0007",
+      "model": "qwen3.5:9b",
+      "condition": "normal",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 7924,
+        "inference_calls": 2,
+        "input_tokens": 853,
+        "output_tokens": 136,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 1,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0008",
+      "model": "qwen3.5:9b",
+      "condition": "permission-denied",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 5479,
+        "inference_calls": 2,
+        "input_tokens": 790,
+        "output_tokens": 91,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0009",
+      "model": "qwen2.5-coder:7b",
+      "condition": "recovery-b",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 7174,
+        "inference_calls": 1,
+        "input_tokens": 237,
+        "output_tokens": 31,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0010",
+      "model": "qwen2.5-coder:7b",
+      "condition": "normal",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 1607,
+        "inference_calls": 1,
+        "input_tokens": 237,
+        "output_tokens": 31,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0011",
+      "model": "qwen2.5-coder:7b",
+      "condition": "recovery-a",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 1423,
+        "inference_calls": 1,
+        "input_tokens": 237,
+        "output_tokens": 31,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0012",
+      "model": "qwen2.5-coder:7b",
+      "condition": "permission-denied",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 1430,
+        "inference_calls": 1,
+        "input_tokens": 237,
+        "output_tokens": 31,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0013",
+      "model": "qwen3.5:4b",
+      "condition": "normal",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 12997,
+        "inference_calls": 2,
+        "input_tokens": 849,
+        "output_tokens": 142,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 1,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0014",
+      "model": "qwen3.5:4b",
+      "condition": "permission-denied",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 3332,
+        "inference_calls": 2,
+        "input_tokens": 789,
+        "output_tokens": 87,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0015",
+      "model": "qwen3.5:4b",
+      "condition": "recovery-a",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 3211,
+        "inference_calls": 2,
+        "input_tokens": 779,
+        "output_tokens": 88,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0016",
+      "model": "qwen3.5:4b",
+      "condition": "recovery-b",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 3517,
+        "inference_calls": 2,
+        "input_tokens": 792,
+        "output_tokens": 95,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0017",
+      "model": "llama3.2:3b",
+      "condition": "recovery-a",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 5614,
+        "inference_calls": 1,
+        "input_tokens": 231,
+        "output_tokens": 35,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0018",
+      "model": "llama3.2:3b",
+      "condition": "permission-denied",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 891,
+        "inference_calls": 1,
+        "input_tokens": 231,
+        "output_tokens": 33,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0019",
+      "model": "llama3.2:3b",
+      "condition": "normal",
+      "status": "passed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 2947,
+        "inference_calls": 2,
+        "input_tokens": 427,
+        "output_tokens": 124,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 1,
+        "retry_attempts": 0,
+        "created_results": 1,
+        "attempts_after_denial": 0
+      }
+    },
+    {
+      "trial_id": "trial-0020",
+      "model": "llama3.2:3b",
+      "condition": "recovery-b",
+      "status": "failed",
+      "stop_reason": "final_answer",
+      "metrics": {
+        "elapsed_ms": 866,
+        "inference_calls": 1,
+        "input_tokens": 231,
+        "output_tokens": 33,
+        "cached_input_tokens": null
+      },
+      "tool_counts": {
+        "generation_attempts": 0,
+        "retry_attempts": 0,
+        "created_results": 0,
+        "attempts_after_denial": 0
+      }
+    }
+  ]
+}

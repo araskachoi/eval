@@ -85,10 +85,28 @@ def main():
     qualification.add_argument('--benchmark', required=True)
     qualification.add_argument('--protocol', required=True)
     run = regression_commands.add_parser('run', help='Run or resume an explicit benchmark')
-    run.add_argument('--spec', type=Path, required=True)
-    run.add_argument('--output', type=Path, required=True)
+    run.add_argument('--spec', type=Path, help='Read the run settings from JSON')
+    run.add_argument('--harness', choices=['codex', 'ollama'])
+    run.add_argument('--model', help='Explicit model ID for the selected harness')
+    run.add_argument('--benchmark', help='Benchmark for an inline run (default: filesystem-v1)')
+    run.add_argument('--protocol', help='Protocol for an inline run (default: independent)')
+    run.add_argument('--trials', type=int, help='Number of trials for an inline run (default: 1)')
+    run.add_argument('--reasoning-effort', choices=['low', 'medium', 'high', 'xhigh'],
+                     help='Reasoning effort for an inline Codex run (default: medium)')
+    run.add_argument('--keychain', action='store_true', help='Read eval-codex-api-key from macOS Keychain')
+    run.add_argument('--output', type=Path, help='Results directory (default: a new run under regression/results/<family>)')
     run.add_argument('--baseline', type=Path)
     run.add_argument('--resume', action='store_true')
+    mcp = regression_commands.add_parser('mcp', help='Run the ElevenLabs fixture benchmark')
+    mcp.add_argument('preset', choices=['pilot', 'sweep', 'matrix'])
+    mcp.add_argument('--output', type=Path)
+    mcp.add_argument('--benchmark', choices=['elevenlabs-mcp-v1', 'elevenlabs-mcp-v2'],
+                     default='elevenlabs-mcp-v1')
+    mcp_report = regression_commands.add_parser('mcp-report', help='Summarize saved ElevenLabs results')
+    mcp_report.add_argument('output', type=Path)
+    mcp_report.add_argument('--reviews', type=Path)
+    mcp_play = regression_commands.add_parser('mcp-play', help='Serve saved ElevenLabs audio on loopback')
+    mcp_play.add_argument('output', type=Path)
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == 'regression':
@@ -98,9 +116,29 @@ def main():
                 result = regression.grade(args.run, args.output)
             elif args.operation == 'compare':
                 result = regression.compare(args.baseline, args.candidate)
+            elif args.operation in ('mcp', 'mcp-report', 'mcp-play'):
+                from . import elevenlabs_benchmark
+                if args.operation == 'mcp':
+                    result = elevenlabs_benchmark.run(args.preset, args.output, benchmark=args.benchmark)
+                elif args.operation == 'mcp-report':
+                    result = elevenlabs_benchmark.report(args.output, args.reviews)
+                else:
+                    elevenlabs_benchmark.play(args.output)
+                    return
             elif args.operation == 'run':
                 from .benchmark_run import run
-                result = run(args.spec, args.output, baseline=args.baseline, resume=args.resume)
+                inline = {name: getattr(args, name) for name in
+                          ('harness', 'model', 'benchmark', 'protocol', 'trials', 'reasoning_effort')
+                          if getattr(args, name) is not None}
+                if args.spec is not None and inline:
+                    raise ValueError('Use --spec or inline run settings')
+                if args.spec is None and not {'harness', 'model'} <= inline.keys():
+                    raise ValueError('Supply --spec or both --harness and --model')
+                spec = args.spec if args.spec is not None else {
+                    'benchmark': 'filesystem-v1', 'protocol': 'independent', 'trials': 1, **inline,
+                }
+                result = run(spec, args.output, baseline=args.baseline, resume=args.resume,
+                             keychain=args.keychain, start_sandbox=True)
             elif args.operation == 'qualify':
                 from .benchmark_qualification import qualify
                 result = qualify(args.benchmark, args.protocol)

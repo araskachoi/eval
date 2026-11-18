@@ -1,11 +1,13 @@
 import copy
-import importlib.util
 import os
 from pathlib import Path
 import unittest
 
+from _environment import isolated_only
+
 
 class IsolationTests(unittest.TestCase):
+    @isolated_only
     def test_effective_workload_boundary(self):
         self.assertEqual(os.getuid(),1000)
         status=Path('/proc/self/status').read_text()
@@ -20,9 +22,7 @@ class IsolationTests(unittest.TestCase):
             Path('/forbidden-test-write').write_text('synthetic only')
 
     def test_launcher_rejects_weakened_container(self):
-        spec=importlib.util.spec_from_file_location('launcher','/work/scripts/isolated.py')
-        launcher=importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(launcher)
+        from scripts import isolated as launcher
         good={'Config':{'User':'1000:1000'},'HostConfig':{'NetworkMode':'none','ReadonlyRootfs':True,
               'SecurityOpt':['no-new-privileges'],'Memory':536870912,'PidsLimit':64,'NanoCpus':1000000000},'Mounts':[]}
         launcher.verify_container(good)

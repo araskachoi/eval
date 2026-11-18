@@ -93,6 +93,7 @@ class RegressionTests(unittest.TestCase):
             save(candidate, 1, 'b', 'failed')
             save(candidate, 2, 'b', 'passed')
             report = regression.compare(baseline, candidate)
+            self.assertEqual(report['verdict'], 'regressed')
             self.assertEqual(report['candidate']['first_pass']['rate'], 0)
             self.assertEqual(report['candidate']['final_pass']['rate'], 1)
             self.assertEqual(report['candidate']['trials']['trial-01']['turns_to_pass'], 2)

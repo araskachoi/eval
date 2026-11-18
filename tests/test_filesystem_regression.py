@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from _environment import isolated_only
 from codex_eval import regression
 from codex_eval.filesystem_grader import DRIVER, fixture_path, passed, prepare
 
@@ -35,6 +36,7 @@ class FilesystemRegressionTests(unittest.TestCase):
                 run.assert_not_called()
             self.assertFalse(output.exists())
 
+    @isolated_only
     def test_kernel_boundary_denies_outside_changes_and_processes(self):
         from scripts.isolated import GUEST_CHECKS
 

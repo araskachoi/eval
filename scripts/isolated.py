@@ -90,11 +90,36 @@ def provision(image, expected_sha256):
             'podman_version': PODMAN_VERSION, 'rootless': True, 'host_mounts': 0}
 
 
-def verify_machine():
+def inspect_machine():
     check_machine_config()
     machine = json.loads(command('machine','inspect',MACHINE))[0]
-    if machine.get('Rootful') is not False or machine.get('State') != 'running':
-        raise RuntimeError('VM must be running, rootless, and have no shared host mounts')
+    if machine.get('Rootful') is not False:
+        raise RuntimeError('VM must be rootless')
+    return machine
+
+
+def start_machine():
+    state = inspect_machine().get('State')
+    for attempt in range(2):
+        if state == 'running':
+            return
+        if state != 'stopped':
+            raise RuntimeError('Expected a stopped or running VM')
+        try:
+            command('machine', 'start', '--update-connection=false', MACHINE, timeout=60)
+            return
+        except RuntimeError as exc:
+            # Another run may have started the VM after the initial inspection.
+            state = inspect_machine().get('State')
+            if state == 'running':
+                return
+            if attempt or state != 'stopped' or 'unable to connect to "gvproxy" socket' not in str(exc):
+                raise
+
+
+def verify_machine():
+    if inspect_machine().get('State') != 'running':
+        raise RuntimeError('VM must be running')
     info = json.loads(command('--connection',MACHINE,'info','--format','json'))
     if info['host']['security'].get('rootless') is not True:
         raise RuntimeError('Effective engine is not rootless')
@@ -195,7 +220,8 @@ with tarfile.open(fileobj=io.BytesIO(data),mode='r:') as archive:
   destination=pathlib.Path('/work')/str(name)
   destination.parent.mkdir(parents=True,exist_ok=True)
   destination.write_bytes(archive.extractfile(member).read())
-result=subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-v'],cwd='/work',timeout=60)
+result=subprocess.run([sys.executable,'-B','tests/run.py'],cwd='/work',timeout=60,
+                      env={**os.environ, 'EVAL_TEST_ENVIRONMENT': 'isolated'})
 if result.returncode==0:
  sys.path.insert(0,'/work')
  from codex_eval.core import Store
@@ -216,7 +242,7 @@ raise SystemExit(result.returncode)
 
 
 def bundle(magen, *, root=ROOT, release_files=None):
-    suffixes = {'.py', '.html', '.js', '.css', '.json', '.md'}
+    suffixes = {'.py', '.html', '.js', '.css', '.json', '.md', '.wav'}
     folders = ['tests']
     files = {} if release_files is None else release_files.copy()
     paths = {}
@@ -344,7 +370,7 @@ def export_fixtures(bundles):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['init','preflight','test','hold','stage'])
+    parser.add_argument('operation',choices=['init','preflight','test','hold','stage','stop'])
     parser.add_argument('--magen',type=Path)
     parser.add_argument('--machine-image', type=Path)
     parser.add_argument('--machine-sha256')
@@ -368,6 +394,8 @@ def main():
             print(json.dumps({'image_id':image['Id'],'repo_digests':image.get('RepoDigests',[])},indent=2))
         elif args.operation=='preflight':
             print(json.dumps(verify_machine(),indent=2))
+        elif args.operation=='stop':
+            print(command('machine','stop',MACHINE).decode(),flush=True)
         else:
             run_tests(args.magen,export=not args.no_export)
     except KeyboardInterrupt:

@@ -33,10 +33,12 @@ Creation must explicitly request rootless operation and an empty volume list;
 Podman defaults can share host directories. Do not reuse the unrelated
 `rea-research` VM. Do not install the rootful macOS helper.
 
-`scripts/isolated.py hold` starts and holds the dedicated VM in a managed foreground
-session; Ctrl-C stops it. `preflight` verifies configuration plus effective engine
-and guest mount state. `test --magen PATH` starts only an inspected, networkless
-rootless workload. MAGEN source is copied; its repository is never mounted.
+`regression run` starts the existing dedicated VM if needed. It stays running
+until you explicitly stop it with `scripts/isolated.py stop`. For provisioning
+and isolated development tests, `scripts/isolated.py hold` starts the dedicated
+VM in a foreground session that stops it on Ctrl-C. `preflight` verifies
+configuration, the effective engine, and guest mount state. `test --magen PATH`
+starts an inspected, network-disabled rootless workload using copied MAGEN source.
 
 Initial tests use fake endpoints and synthetic credentials only. External APIs
 and host Ollama are not accessed. Root filesystem inside the container is its

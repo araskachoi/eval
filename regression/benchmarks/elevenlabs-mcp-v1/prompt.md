@@ -1,0 +1,1 @@
+Using the connected ElevenLabs MCP, generate one voiceover that says ‘Welcome back to the show’ in a warm, friendly voice. Share the link where I can listen to it. If you can’t complete it, tell me what blocked you.

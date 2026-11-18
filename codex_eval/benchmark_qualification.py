@@ -25,6 +25,17 @@ def qualify(benchmark, protocol):
                          b"not isinstance(row['amount_cents'], int)"),
             {'malformed_row_rollback'},
         )
+        probes['append_identical_replays'] = (
+            replace_once(reference, b"        elif previous != row:",
+                         b"        elif previous == row:\n            rows.append(row)\n        else:"),
+            {'replay_across_invocations', 'identical_duplicate_in_batch'},
+        )
+        probes['persist_rows_before_conflict'] = (
+            replace_once(reference, b"            raise ValueError('Conflicting transaction')",
+                         b"            ledger.write_text(json.dumps(rows))\n"
+                         b"            raise ValueError('Conflicting transaction')"),
+            {'conflict_with_ledger', 'conflict_within_batch'},
+        )
     else:
         probes['overwrite_collision'] = (
             replace_once(reference, b'while target.exists() or target.is_symlink():', b'while False:'),

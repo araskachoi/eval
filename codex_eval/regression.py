@@ -17,6 +17,17 @@ MAX_RESULTS = 1000
 METRICS = ('input_tokens', 'output_tokens', 'cached_input_tokens', 'elapsed_ms')
 
 
+def results_directory(regression_dir, benchmark):
+    family = benchmark.rsplit('-v', 1)[0]
+    if family == 'elevenlabs-mcp':
+        family = 'elevenlabs'
+    results = regression_dir / 'results'
+    directory = results / family
+    if any(path.is_symlink() for path in (regression_dir, results, directory)):
+        raise ValueError('Default results directory must not use symlinks')
+    return directory
+
+
 def read_file(path, limit):
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
@@ -66,14 +77,18 @@ def benchmark_definition(benchmark_id, protocol):
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]*', benchmark_id):
         raise ValueError('Unknown benchmark')
     benchmark_path = ROOT / benchmark_id
-    assets = {name: read_file(benchmark_path / name, 65536)
-              for name in ('benchmark.json', 'prompt.md')}
+    fixture_path = ROOT / 'elevenlabs-mcp-v1' if benchmark_id == 'elevenlabs-mcp-v2' else benchmark_path
+    assets = {'benchmark.json': read_file(benchmark_path / 'benchmark.json', 65536),
+              'prompt.md': read_file(fixture_path / 'prompt.md', 65536)}
     benchmark = json.loads(assets['benchmark.json'])
     initial_prompt = assets['prompt.md'].decode()
     if benchmark['grader'] == 'ledger-cli-v1':
         assets['ledger.py'] = read_file(benchmark_path / 'ledger.py', 65536)
         initial_prompt = (initial_prompt.rstrip() + '\n\nOriginal ledger.py:\n\n'
                           + '```python\n' + assets['ledger.py'].decode().rstrip() + '\n```\n')
+    if benchmark['grader'] == 'elevenlabs-mcp-trace-v1':
+        assets['welcome.wav'] = read_file(fixture_path / 'welcome.wav', 65536)
+        initial_prompt = initial_prompt.rstrip('\n')
     identity = {key: digest(data) for key, data in assets.items()}
     protocols = benchmark.get('protocols')
     if protocols is not None:
@@ -230,6 +245,20 @@ def compare(baseline_dir, candidate_dir):
             'candidate': summaries[1], 'paired_trials': pairs,
             'baseline_only': sorted(sides[0].keys() - sides[1].keys()),
             'candidate_only': sorted(sides[1].keys() - sides[0].keys())}
+    scores = ('first_pass', 'final_pass')
+    if (report['baseline_only'] or report['candidate_only'] or
+            any(side[key]['graded'] != len(paired) for side in summaries for key in scores)):
+        report['verdict'] = 'inconclusive'
+    else:
+        deltas = [summaries[1][key]['passed'] - summaries[0][key]['passed'] for key in scores]
+        if min(deltas) < 0 < max(deltas):
+            report['verdict'] = 'mixed'
+        elif max(deltas) > 0:
+            report['verdict'] = 'improved'
+        elif min(deltas) < 0:
+            report['verdict'] = 'regressed'
+        else:
+            report['verdict'] = 'unchanged'
     if all_rows[0].get('protocol') is not None:
         report['protocol'] = all_rows[0]['protocol']
     return report

@@ -33,7 +33,7 @@ PROCESSES = {}
 def source_files(root):
     files = {}
     for folder, suffixes in (('codex_eval', {'.py', '.html', '.js', '.css'}),
-                             ('scripts', {'.py'}), ('regression/benchmarks', {'.py', '.json', '.md'}),
+                             ('scripts', {'.py'}), ('regression/benchmarks', {'.py', '.json', '.md', '.wav'}),
                              ('integrations/codex/record', {'.md', '.yaml'})):
         base = root / folder
         if base.is_symlink() or any(p.is_symlink() for p in base.parents):

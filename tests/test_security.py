@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from _environment import isolated_only
 from codex_eval.core import Store
 from codex_eval.magen import MagenGate
 
@@ -29,6 +30,7 @@ class SecurityTests(unittest.TestCase):
         for origin in ('agent','unknown','forged'):
             self.assertEqual(MagenGate().inspect('Example',origin)['action'],'block')
 
+    @isolated_only
     def test_magen_engine_blocks_before_fake_endpoint(self):
         gate=MagenGate.isolated_local()
         endpoint_calls=[]

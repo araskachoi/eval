@@ -1,0 +1,12 @@
+{
+  "grader": "elevenlabs-mcp-trace-v1",
+  "max_turns": 4,
+  "fixture_version": "welcome-pcm-v1",
+  "conditions": ["normal", "recovery-a", "recovery-b", "permission-denied"],
+  "pilot_models": ["gemma4:latest", "qwen2.5-coder:7b"],
+  "matrix_models": ["gemma4:latest", "qwen3.5:9b", "qwen2.5-coder:7b", "qwen3.5:4b", "llama3.2:3b"],
+  "ollama_settings": {"temperature": 0.2, "num_ctx": 4096, "num_predict": 512, "keep_alive": "2m", "think": false},
+  "pilot_trials_per_condition": 1,
+  "matrix_trials_per_condition": 80,
+  "design_seed": 1138
+}
